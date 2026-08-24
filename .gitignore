@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 永続化データ（要件定義 §11.4：リポジトリ直下・git 管理外）
+data/
+
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
