@@ -18,3 +18,9 @@ export type Coord = {
     readonly row: number;
     readonly col: number;
 };
+
+/** 8方向の走査に用いる方向ベクトル。盤上の位置ではなく、1ステップぶんの移動量を表す */
+export type Direction = {
+    readonly rowDelta: number;
+    readonly colDelta: number;
+};
