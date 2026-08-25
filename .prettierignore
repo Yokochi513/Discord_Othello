@@ -1,0 +1,10 @@
+# 生成物・ビルド出力
+dist/
+coverage/
+*.tsbuildinfo
+
+# npm の生成物。手で整形しても npm install で戻されるため対象外とする
+package-lock.json
+
+# 永続化データ（要件定義 §11.4）
+data/

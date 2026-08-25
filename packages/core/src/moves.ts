@@ -14,6 +14,8 @@ import { getCell, type Board } from "./board.js";
 import { opponent } from "./player.js";
 import type { Coord, Direction, Player } from "./type.ts";
 
+/** 盤面の 8 方向。上下左右と斜めを 3x3 の並びで表すため、整形対象から外す */
+// prettier-ignore
 export const DIRECTIONS: readonly Direction[] = [
     { rowDelta: -1, colDelta: -1 }, { rowDelta: -1, colDelta: 0 }, { rowDelta: -1, colDelta: 1 },
     { rowDelta:  0, colDelta: -1 },                                { rowDelta:  0, colDelta: 1 },
