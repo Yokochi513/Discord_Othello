@@ -18,3 +18,6 @@ export { countCells, countStones, createInitialBoard, getCell } from "./board.js
 
 // 手番
 export { FIRST_PLAYER, opponent } from "./player.js";
+
+// 合法手
+export { isLegalMove, listLegalMoves, hasLegalMove } from "./moves.js";
