@@ -6,7 +6,7 @@
  * 合法手の判定や石の反転といったルール処理は持たず、`moves.ts`以降にゆだねる。
  *
  * `coord.ts`に依存する。
-*/
+ */
 
 import { BOARD_SIZE, isOnBoard } from "./coord";
 import type { Cell, Coord, Player } from "./type.ts";
@@ -25,6 +25,8 @@ export type CellCount = Readonly<Record<Cell, number>>;
 /**
  * 盤面を実行時に凍結して不変にする（外側の配列と各行の両方）。
  * 盤面を生成・更新する処理は、呼び出し元へ返す直前にこの関数を通すこと。
+ * @param board 凍結する盤面。引数自身が破壊的に凍結される
+ * @returns 凍結された盤面。引数と同一のインスタンス
  */
 export function freezeBoard(board: Cell[][]): Board {
     for (const row of board) {
@@ -33,9 +35,12 @@ export function freezeBoard(board: Cell[][]): Board {
     return Object.freeze(board);
 }
 
-/** 初期盤面を返す。d4=白, e4=黒, d5=黒, e5=白 で、先手は黒 */
+/**
+ * 初期盤面を生成する。d4=白, e4=黒, d5=黒, e5=白 で、先手は黒。
+ * @returns 凍結済みの初期盤面。呼び出しごとに独立したインスタンスを返す
+ */
 export function createInitialBoard(): Board {
-    const board: Cell[][] = Array.from( {length: BOARD_SIZE }, () =>
+    const board: Cell[][] = Array.from({ length: BOARD_SIZE }, () =>
         Array.from({ length: BOARD_SIZE }, (): Cell => "empty"),
     );
 
@@ -48,7 +53,10 @@ export function createInitialBoard(): Board {
 }
 
 /**
- * 盤面のマスを取得する。盤外を指す座標の場合は null を返す。
+ * 盤面のマスを取得する。
+ * @param board 対象の盤面
+ * @param coord 取得するマスの内部インデックス
+ * @returns マスの状態。盤外を指す座標の場合は null
  */
 export function getCell(board: Board, coord: Coord): Cell | null {
     if (!isOnBoard(coord)) return null;
@@ -59,6 +67,8 @@ export function getCell(board: Board, coord: Coord): Cell | null {
 /**
  * 盤面の石数と空マス数を数える。
  * 終局時の勝敗判定（石数の多い方が勝ち）と、盤面が埋まったかの判定に用いる。
+ * @param board 対象の盤面
+ * @returns 黒・白・空マスそれぞれの数。合計は常に 64
  */
 export function countCells(board: Board): CellCount {
     const count: Record<Cell, number> = { black: 0, white: 0, empty: 0 };
@@ -72,7 +82,12 @@ export function countCells(board: Board): CellCount {
     return count;
 }
 
-/** 指定した色の石数を数える */
+/**
+ * 指定した色の石数を数える。
+ * @param board 対象の盤面
+ * @param player 数える石の色
+ * @returns player の石数
+ */
 export function countStones(board: Board, player: Player): number {
     return countCells(board)[player];
 }

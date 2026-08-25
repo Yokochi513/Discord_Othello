@@ -1,0 +1,11 @@
+{
+  "printWidth": 100,
+  "tabWidth": 4,
+  "endOfLine": "auto",
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc", "*.json5", "*.yml", "*.yaml", ".prettierrc"],
+      "options": { "tabWidth": 2 }
+    }
+  ]
+}
