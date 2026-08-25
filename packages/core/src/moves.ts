@@ -25,7 +25,10 @@ export const DIRECTIONS: readonly Direction[] = [
 
 /**
  * 指定したマスが player にとって合法手か判定する。
- * 盤外・空でないマスは常にfalse。
+ * @param board 対象の盤面
+ * @param coord 判定するマスの内部インデックス
+ * @param player 着手する側の色
+ * @returns 8 方向のいずれかで相手の石を 1 枚以上挟めれば true。盤外・空でないマスは常に false
  */
 export function isLegalMove(board: Board, coord: Coord, player: Player): boolean {
     // 盤外、または既に石があるマスにはおけない
@@ -57,12 +60,11 @@ export function isLegalMove(board: Board, coord: Coord, player: Player): boolean
 }
 
 /**
- * playerにとって合法手は何があるのかを列挙する。
- * 走査順は a1 -> h8 で固定する。
- * 合法手が一つもない場合はから配列を返す。
- * @param board
- * @param player
- * @returns
+ * player にとっての合法手をすべて列挙する。
+ * 走査順は a1 -> h8（row 昇順、その中で col 昇順）で固定する。
+ * @param board 対象の盤面
+ * @param player 着手する側の色
+ * @returns 合法手の内部インデックスの一覧。1 つも無い場合は空配列（＝その手番はパス）
  */
 export function listLegalMoves(board: Board, player: Player): readonly Coord[] {
     const moves: Coord[] = [];
@@ -78,10 +80,11 @@ export function listLegalMoves(board: Board, player: Player): readonly Coord[] {
 }
 
 /**
- * playerにとって合法手が一つでもあるのか銅貨を返す。
- * @param board
- * @param player
- * @returns
+ * player にとって合法手が 1 つでもあるかを返す。
+ * パス判定・終局判定（両者とも打てない）に用いる。
+ * @param board 対象の盤面
+ * @param player 着手する側の色
+ * @returns 合法手が 1 つでもあれば true
  */
 export function hasLegalMove(board: Board, player: Player): boolean {
     for (let row = 0; row < BOARD_SIZE; row++) {
