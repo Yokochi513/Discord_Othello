@@ -1,16 +1,17 @@
 /**
- * moves.ts のテスト。8 方向の方向ベクトルと、指定マスが合法手かの判定を検証する。
+ * moves.ts のテスト。8 方向の方向ベクトル、指定マスが合法手かの判定、
+ * 合法手の列挙と有無の判定を検証する。
  *
  * 盤面の生成やマスの参照そのものは board.test.ts の責務とし、
  * ここでは検証済みの board.ts / coord.ts をテスト用ヘルパー経由で利用する。
  */
 
 import { describe, expect, it } from "vitest";
-import { createInitialBoard, freezeBoard } from "./board.js";
+import { createInitialBoard, freezeBoard, getCell } from "./board.js";
 import type { Board } from "./board.js";
 import { BOARD_SIZE, formatSquare, parseSquare } from "./coord.js";
-import { DIRECTIONS, isLegalMove } from "./moves.js";
-import type { Cell, Player, Square } from "./type.js";
+import { DIRECTIONS, hasLegalMove, isLegalMove, listLegalMoves } from "./moves.js";
+import type { Cell, Coord, Player, Square } from "./type.js";
 
 /**
  * 文字列から盤面を組み立てるテスト用ヘルパー。
@@ -27,6 +28,14 @@ const EMPTY_ROWS = Array.from({ length: BOARD_SIZE }, () => "........");
 /** 座標表記で合法手かを判定するテスト用ヘルパー */
 function legalAt(board: Board, square: Square, player: Player): boolean {
     return isLegalMove(board, parseSquare(square)!, player);
+}
+
+/**
+ * 合法手の一覧を座標表記へ変換するテスト用ヘルパー。
+ * 走査順そのものを検証するため、並べ替えはしない。
+ */
+function toSquares(coords: readonly Coord[]): Square[] {
+    return coords.map((coord) => formatSquare(coord)!);
 }
 
 /** 盤上の全マスを走査し、合法手の座標表記を昇順で返す */
@@ -235,5 +244,148 @@ describe("isLegalMove: 副作用がない", () => {
         legalSquares(board, "white");
 
         expect(JSON.stringify(board)).toBe(before);
+    });
+});
+
+describe("listLegalMoves", () => {
+    it("初期盤面の黒の合法手を a1 -> h8 の順で返す", () => {
+        expect(toSquares(listLegalMoves(createInitialBoard(), "black"))).toEqual([
+            "d3",
+            "c4",
+            "f5",
+            "e6",
+        ]);
+    });
+
+    it("初期盤面の白の合法手を a1 -> h8 の順で返す", () => {
+        expect(toSquares(listLegalMoves(createInitialBoard(), "white"))).toEqual([
+            "e3",
+            "f4",
+            "c5",
+            "d6",
+        ]);
+    });
+
+    it("合法手が無い盤面では空配列を返す", () => {
+        const board = boardOf(EMPTY_ROWS);
+
+        expect(listLegalMoves(board, "black")).toEqual([]);
+        expect(listLegalMoves(board, "white")).toEqual([]);
+    });
+
+    it("合法手が 1 つだけの盤面ではその 1 つを返す", () => {
+        // b1=白, c1=黒。黒が挟めるのは a1 のみ
+        const board = boardOf([".wb.....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(toSquares(listLegalMoves(board, "black"))).toEqual(["a1"]);
+    });
+
+    it("走査順は row 昇順・col 昇順で単調に増加する", () => {
+        const moves = listLegalMoves(createInitialBoard(), "black");
+
+        expect(moves.length).toBeGreaterThan(1);
+        for (let i = 1; i < moves.length; i++) {
+            const prev = moves[i - 1]!;
+            const current = moves[i]!;
+
+            expect(prev.row * BOARD_SIZE + prev.col).toBeLessThan(
+                current.row * BOARD_SIZE + current.col,
+            );
+        }
+    });
+
+    // listLegalMoves を最適化した実装に差し替えても、isLegalMove との整合が崩れないよう固定する
+    it("isLegalMove を全マスに適用した結果と一致する", () => {
+        const board = boardOf([
+            "........",
+            "...bw...",
+            "..bwb...",
+            "...wbw..",
+            "..b.w...",
+            "........",
+            "........",
+            "........",
+        ]);
+
+        for (const player of ["black", "white"] as const) {
+            expect(toSquares(listLegalMoves(board, player)).sort()).toEqual(
+                legalSquares(board, player),
+            );
+        }
+    });
+
+    it("返す座標はすべて空マスであり、isLegalMove が true になる", () => {
+        const board = createInitialBoard();
+
+        for (const coord of listLegalMoves(board, "black")) {
+            const square = formatSquare(coord)!;
+
+            expect(getCell(board, coord), `${square} は空であること`).toBe("empty");
+            expect(isLegalMove(board, coord, "black"), `${square} は合法手であること`).toBe(true);
+        }
+    });
+
+    it("列挙しても盤面の内容が変わらない", () => {
+        const board = createInitialBoard();
+        const before = JSON.stringify(board);
+
+        listLegalMoves(board, "black");
+        listLegalMoves(board, "white");
+
+        expect(JSON.stringify(board)).toBe(before);
+    });
+});
+
+describe("hasLegalMove", () => {
+    it("初期盤面では黒も白も打てる", () => {
+        const board = createInitialBoard();
+
+        expect(hasLegalMove(board, "black")).toBe(true);
+        expect(hasLegalMove(board, "white")).toBe(true);
+    });
+
+    it("石が 1 つも無い盤面では打てない", () => {
+        const board = boardOf(EMPTY_ROWS);
+
+        expect(hasLegalMove(board, "black")).toBe(false);
+        expect(hasLegalMove(board, "white")).toBe(false);
+    });
+
+    it("盤面が石で埋まっていれば打てない", () => {
+        const board = boardOf(Array.from({ length: BOARD_SIZE }, () => "bbbbwwww"));
+
+        expect(hasLegalMove(board, "black")).toBe(false);
+        expect(hasLegalMove(board, "white")).toBe(false);
+    });
+
+    it("空マスが残っていても挟めなければ両者とも打てない（終局）", () => {
+        // a1=黒, b1=黒のみ。白は黒を挟めず、黒は挟む相手の石が無い
+        const board = boardOf(["bb......", ...EMPTY_ROWS.slice(1)]);
+
+        expect(hasLegalMove(board, "black")).toBe(false);
+        expect(hasLegalMove(board, "white")).toBe(false);
+    });
+
+    it("合法手が 1 つだけでも true を返す", () => {
+        // b1=白, c1=黒。黒が挟めるのは a1 のみ
+        const board = boardOf([".wb.....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(listLegalMoves(board, "black")).toHaveLength(1);
+        expect(hasLegalMove(board, "black")).toBe(true);
+    });
+
+    it("listLegalMoves の件数と常に整合する", () => {
+        const boards = [
+            createInitialBoard(),
+            boardOf(EMPTY_ROWS),
+            boardOf([".wb.....", ...EMPTY_ROWS.slice(1)]),
+            boardOf(["bb......", ...EMPTY_ROWS.slice(1)]),
+        ];
+
+        for (const board of boards) {
+            for (const player of ["black", "white"] as const) {
+                expect(hasLegalMove(board, player)).toBe(listLegalMoves(board, player).length > 0);
+            }
+        }
     });
 });
