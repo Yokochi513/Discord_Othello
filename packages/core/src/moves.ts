@@ -11,6 +11,7 @@
  */
 
 import { getCell, type Board } from "./board.js";
+import { BOARD_SIZE } from "./coord.js";
 import { opponent } from "./player.js";
 import type { Coord, Direction, Player } from "./type.ts";
 
@@ -54,5 +55,41 @@ export function isLegalMove(board: Board, coord: Coord, player: Player): boolean
 
     return false;
 }
-// listLegalMoves
-// hasLegalMove
+
+/**
+ * playerにとって合法手は何があるのかを列挙する。
+ * 走査順は a1 -> h8 で固定する。
+ * 合法手が一つもない場合はから配列を返す。
+ * @param board
+ * @param player
+ * @returns
+ */
+export function listLegalMoves(board: Board, player: Player): readonly Coord[] {
+    const moves: Coord[] = [];
+
+    for (let row = 0; row < BOARD_SIZE; row++) {
+        for (let col = 0; col < BOARD_SIZE; col++) {
+            const coord: Coord = { row, col };
+            if (isLegalMove(board, coord, player)) moves.push(coord);
+        }
+    }
+
+    return moves;
+}
+
+/**
+ * playerにとって合法手が一つでもあるのか銅貨を返す。
+ * @param board
+ * @param player
+ * @returns
+ */
+export function hasLegalMove(board: Board, player: Player): boolean {
+    for (let row = 0; row < BOARD_SIZE; row++) {
+        for (let col = 0; col < BOARD_SIZE; col++) {
+            const coord: Coord = { row, col };
+            if (isLegalMove(board, coord, player)) return true;
+        }
+    }
+
+    return false;
+}
