@@ -8,7 +8,7 @@
  * 依存は`type.ts`のみ。coreの中で最下層に位置する。
  */
 
-import type { Coord, Square } from "./type.ts"
+import type { Coord, Square } from "./type.ts";
 
 /** 盤面の一辺のマス数。オセロの標準ルールに従い 8 とする */
 export const BOARD_SIZE = 8;
@@ -26,8 +26,12 @@ const RANKS = "12345678";
 export function isOnBoard(coord: Coord): boolean {
     const { row, col } = coord;
     return (
-        Number.isInteger(row) && row >= 0 && row < BOARD_SIZE &&
-        Number.isInteger(col) && col >= 0 && col < BOARD_SIZE
+        Number.isInteger(row) &&
+        row >= 0 &&
+        row < BOARD_SIZE &&
+        Number.isInteger(col) &&
+        col >= 0 &&
+        col < BOARD_SIZE
     );
 }
 

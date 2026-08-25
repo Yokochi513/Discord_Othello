@@ -28,24 +28,28 @@ export const DIRECTIONS: readonly Direction[] = [
  */
 export function isLegalMove(board: Board, coord: Coord, player: Player): boolean {
     // 盤外、または既に石があるマスにはおけない
-    if(getCell(board, coord) !== "empty") return false;
+    if (getCell(board, coord) !== "empty") return false;
 
     const enemy = opponent(player);
 
     // 各方向をチェック
-    for(const direction of DIRECTIONS)
-    {
-        let current: Coord = { row: coord.row + direction.rowDelta, col: coord.col + direction.colDelta };
+    for (const direction of DIRECTIONS) {
+        let current: Coord = {
+            row: coord.row + direction.rowDelta,
+            col: coord.col + direction.colDelta,
+        };
         let hasEnemyBetween = false;
         // カレントマスが相手の石である
-        while(getCell(board, current) === enemy)
-        {
-            current = { row: current.row + direction.rowDelta, col: current.col + direction.colDelta };
+        while (getCell(board, current) === enemy) {
+            current = {
+                row: current.row + direction.rowDelta,
+                col: current.col + direction.colDelta,
+            };
             hasEnemyBetween = true;
         }
 
         // 相手の石の並びの先が自分の石なら、この方向で挟めている。
-        if(getCell(board, current) === player && hasEnemyBetween) return true;
+        if (getCell(board, current) === player && hasEnemyBetween) return true;
     }
 
     return false;

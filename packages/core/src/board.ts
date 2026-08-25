@@ -6,7 +6,7 @@
  * 合法手の判定や石の反転といったルール処理は持たず、`moves.ts`以降にゆだねる。
  *
  * `coord.ts`に依存する。
-*/
+ */
 
 import { BOARD_SIZE, isOnBoard } from "./coord";
 import type { Cell, Coord, Player } from "./type.ts";
@@ -35,7 +35,7 @@ export function freezeBoard(board: Cell[][]): Board {
 
 /** 初期盤面を返す。d4=白, e4=黒, d5=黒, e5=白 で、先手は黒 */
 export function createInitialBoard(): Board {
-    const board: Cell[][] = Array.from( {length: BOARD_SIZE }, () =>
+    const board: Cell[][] = Array.from({ length: BOARD_SIZE }, () =>
         Array.from({ length: BOARD_SIZE }, (): Cell => "empty"),
     );
 
