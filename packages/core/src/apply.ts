@@ -1,5 +1,5 @@
 /**
- * 着手の適用。着手にいよって反転する石の列挙と
+ * 着手の適用。着手によって反転する石の列挙と
  * 反転を反映した新しい盤面の生成を担う。
  *
  * 非合法な着手は適用せず`IllegalMoveError`を投げる。サーバー権威のため、
@@ -42,7 +42,7 @@ export class IllegalMoveError extends Error {
  * @param board 対象の盤面
  * @param coord 着手するマスの内部インデックス
  * @param player 着手する側の色
- * @returns 反転するマスの一覧。着手が非合法な場合はから配列
+ * @returns 反転するマスの一覧。着手が非合法な場合は空配列
  */
 export function listFlips(board: Board, coord: Coord, player: Player): readonly Coord[] {
     // 盤外、または既に石があるマスにはおけない
