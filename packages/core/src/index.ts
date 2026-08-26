@@ -7,7 +7,19 @@
  */
 
 // 型
-export type { Cell, Coord, File, Player, Rank, Square, TurnResult } from "./type.js";
+export type {
+    Cell,
+    Coord,
+    File,
+    Player,
+    Rank,
+    Square,
+    TurnResult,
+    GameEndReason,
+    Outcome,
+    Score,
+    GameResult,
+} from "./type.js";
 export type { Board, CellCount } from "./board.js";
 
 // 座標系
@@ -27,3 +39,13 @@ export { listFlips, applyMove, IllegalMoveError } from "./apply.js";
 
 // 手番遷移
 export { nextTurn, passedPlayers } from "./turn.js";
+
+// 終局判定
+export {
+    detectGameEnd,
+    isGameOver,
+    judgeOutcome,
+    finishGame,
+    resignGame,
+    winnerOf,
+} from "./result.js";

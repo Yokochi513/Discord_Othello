@@ -33,3 +33,19 @@ export type TurnResult =
     | { readonly kind: "pass"; readonly player: Player; readonly passedBy: Player }
     /** 連続パス。両者とも合法手が無い。終局判定はここでは行わない */
     | { readonly kind: "bothPassed"; readonly passedBy: readonly [Player, Player] };
+
+/** 終局理由。投了のみ盤面外の事象 */
+export type GameEndReason = "bothPassed" | "boardFull" | "shutout" | "resign";
+
+/** 勝敗 */
+export type Outcome = "blackWin" | "whiteWin" | "draw";
+
+/** 終局時点の石数 */
+export type Score = Readonly<Record<Player, number>>;
+
+/** 対局結果 */
+export type GameResult = {
+    readonly reason: GameEndReason;
+    readonly outcome: Outcome;
+    readonly score: Score;
+};
