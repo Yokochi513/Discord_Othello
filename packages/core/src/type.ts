@@ -32,4 +32,4 @@ export type TurnResult =
     /** 自動パス。相手に合法手が無く、手番がplayer側へ戻る。passedByがパスした側 */
     | { readonly kind: "pass"; readonly player: Player; readonly passedBy: Player }
     /** 連続パス。両者とも合法手が無い。終局判定はここでは行わない */
-    | { readonly kind: "bothPassed"; readonly passedBy: [Player, Player] };
+    | { readonly kind: "bothPassed"; readonly passedBy: readonly [Player, Player] };
