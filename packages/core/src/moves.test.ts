@@ -1,6 +1,6 @@
 /**
- * moves.ts のテスト。8 方向の方向ベクトル、指定マスが合法手かの判定、
- * 合法手の列挙と有無の判定を検証する。
+ * moves.ts のテスト。8 方向の方向ベクトルと 1 方向ぶんの走査、
+ * 指定マスが合法手かの判定、合法手の列挙と有無の判定を検証する。
  *
  * 盤面の生成やマスの参照そのものは board.test.ts の責務とし、
  * ここでは検証済みの board.ts / coord.ts をテスト用ヘルパー経由で利用する。
@@ -10,8 +10,15 @@ import { describe, expect, it } from "vitest";
 import { createInitialBoard, freezeBoard, getCell } from "./board.js";
 import type { Board } from "./board.js";
 import { BOARD_SIZE, formatSquare, parseSquare } from "./coord.js";
-import { DIRECTIONS, hasLegalMove, isLegalMove, listLegalMoves } from "./moves.js";
-import type { Cell, Coord, Player, Square } from "./type.js";
+import {
+    DIRECTIONS,
+    hasLegalMove,
+    isLegalMove,
+    listFlipsInDirection,
+    listLegalMoves,
+    step,
+} from "./moves.js";
+import type { Cell, Coord, Direction, Player, Square } from "./type.js";
 
 /**
  * 文字列から盤面を組み立てるテスト用ヘルパー。
@@ -36,6 +43,29 @@ function legalAt(board: Board, square: Square, player: Player): boolean {
  */
 function toSquares(coords: readonly Coord[]): Square[] {
     return coords.map((coord) => formatSquare(coord)!);
+}
+
+/** 上方向（row が減る側）。1 方向ぶんの走査を検証するために名前を付ける */
+const UP: Direction = { rowDelta: -1, colDelta: 0 };
+
+/** 下方向（row が増える側） */
+const DOWN: Direction = { rowDelta: 1, colDelta: 0 };
+
+/** 左方向（col が減る側） */
+const LEFT: Direction = { rowDelta: 0, colDelta: -1 };
+
+/** 右方向（col が増える側） */
+const RIGHT: Direction = { rowDelta: 0, colDelta: 1 };
+
+/** 右下方向（斜め） */
+const DOWN_RIGHT: Direction = { rowDelta: 1, colDelta: 1 };
+
+/**
+ * 座標表記で 1 方向ぶんの反転石を列挙するテスト用ヘルパー。
+ * 走査順そのものを検証するため、並べ替えはしない。
+ */
+function flipsToward(board: Board, square: Square, direction: Direction, player: Player): Square[] {
+    return toSquares(listFlipsInDirection(board, parseSquare(square)!, direction, player));
 }
 
 /** 盤上の全マスを走査し、合法手の座標表記を昇順で返す */
@@ -73,6 +103,216 @@ describe("DIRECTIONS", () => {
         const keys = DIRECTIONS.map(({ rowDelta, colDelta }) => `${rowDelta},${colDelta}`);
 
         expect(new Set(keys).size).toBe(DIRECTIONS.length);
+    });
+});
+
+describe("step", () => {
+    it("方向ベクトルのぶんだけ座標を進める", () => {
+        expect(step({ row: 3, col: 4 }, RIGHT)).toEqual({ row: 3, col: 5 });
+        expect(step({ row: 3, col: 4 }, LEFT)).toEqual({ row: 3, col: 3 });
+        expect(step({ row: 3, col: 4 }, UP)).toEqual({ row: 2, col: 4 });
+        expect(step({ row: 3, col: 4 }, DOWN)).toEqual({ row: 4, col: 4 });
+        expect(step({ row: 3, col: 4 }, DOWN_RIGHT)).toEqual({ row: 4, col: 5 });
+    });
+
+    it("DIRECTIONS のどの方向でも成分ぶんだけ進む", () => {
+        const origin: Coord = { row: 4, col: 4 };
+
+        for (const direction of DIRECTIONS) {
+            expect(step(origin, direction)).toEqual({
+                row: origin.row + direction.rowDelta,
+                col: origin.col + direction.colDelta,
+            });
+        }
+    });
+
+    it("盤外へはみ出す座標もそのまま返す（盤上判定は行わない）", () => {
+        expect(step({ row: 0, col: 0 }, UP)).toEqual({ row: -1, col: 0 });
+        expect(step({ row: 0, col: 0 }, LEFT)).toEqual({ row: 0, col: -1 });
+        expect(step({ row: BOARD_SIZE - 1, col: BOARD_SIZE - 1 }, DOWN_RIGHT)).toEqual({
+            row: BOARD_SIZE,
+            col: BOARD_SIZE,
+        });
+    });
+
+    it("元の座標を書き換えず、別のオブジェクトを返す", () => {
+        const coord: Coord = { row: 3, col: 4 };
+        const next = step(coord, RIGHT);
+
+        expect(coord).toEqual({ row: 3, col: 4 });
+        expect(next).not.toBe(coord);
+    });
+
+    it("逆向きの方向で進め直すと元の座標に戻る", () => {
+        const coord: Coord = { row: 2, col: 5 };
+
+        for (const { rowDelta, colDelta } of DIRECTIONS) {
+            const back = step(step(coord, { rowDelta, colDelta }), {
+                rowDelta: -rowDelta,
+                colDelta: -colDelta,
+            });
+
+            expect(back).toEqual(coord);
+        }
+    });
+});
+
+describe("listFlipsInDirection: 挟める方向", () => {
+    it("指定方向の相手の石を着手点に近い順で返す", () => {
+        // a1=黒, b1=白, c1=白, d1=黒。a1 から右へ 2 枚挟める
+        const board = boardOf(["bwwb....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "a1", RIGHT, "black")).toEqual(["b1", "c1"]);
+    });
+
+    it("逆向きの方向からも同じ石を挟める", () => {
+        const board = boardOf(["bwwb....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "d1", LEFT, "black")).toEqual(["c1", "b1"]);
+    });
+
+    it("縦方向も同様に挟める", () => {
+        // a1=黒, a2=白, a3=白, a4=黒
+        const board = boardOf([
+            "b.......",
+            "w.......",
+            "w.......",
+            "b.......",
+            ...EMPTY_ROWS.slice(4),
+        ]);
+
+        expect(flipsToward(board, "a1", DOWN, "black")).toEqual(["a2", "a3"]);
+        expect(flipsToward(board, "a4", UP, "black")).toEqual(["a3", "a2"]);
+    });
+
+    it("斜め方向も同様に挟める", () => {
+        // a1=黒, b2=白, c3=白, d4=黒
+        const board = boardOf([
+            "b.......",
+            ".w......",
+            "..w.....",
+            "...b....",
+            ...EMPTY_ROWS.slice(4),
+        ]);
+
+        expect(flipsToward(board, "a1", DOWN_RIGHT, "black")).toEqual(["b2", "c3"]);
+    });
+
+    it("指定した方向の石だけを返し、他の方向の石は含まない", () => {
+        // d4 の右（e4=白, f4=黒）と下（d5=白, d6=黒）の両方で挟める
+        const board = boardOf([
+            "........",
+            "........",
+            "........",
+            "....wb..",
+            "...w....",
+            "...b....",
+            "........",
+            "........",
+        ]);
+
+        expect(flipsToward(board, "d4", RIGHT, "black")).toEqual(["e4"]);
+        expect(flipsToward(board, "d4", DOWN, "black")).toEqual(["d5"]);
+        expect(flipsToward(board, "d4", UP, "black")).toEqual([]);
+    });
+
+    it("手番の色を入れ替えると挟めなくなる", () => {
+        const board = boardOf(["bwwb....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "a1", RIGHT, "white")).toEqual([]);
+    });
+
+    it("着手点が空マスかどうかは判定しない（呼び出し側の責務）", () => {
+        // a1 には既に黒石があるが、右方向の走査結果はそのまま返す
+        const board = boardOf(["bwwb....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(getCell(board, parseSquare("a1")!)).toBe("black");
+        expect(flipsToward(board, "a1", RIGHT, "black")).toEqual(["b1", "c1"]);
+    });
+});
+
+describe("listFlipsInDirection: 挟めない方向", () => {
+    it("隣が自分の石なら空配列を返す（0 枚挟み）", () => {
+        // a1=黒, b1=黒。c1 から左へ進んでも相手の石が 1 枚も無い
+        const board = boardOf(["bb......", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "c1", LEFT, "black")).toEqual([]);
+    });
+
+    it("隣が空マスなら空配列を返す", () => {
+        // b1=空, c1=白, d1=黒。a1 の右隣が空マスで走査が始まらない
+        const board = boardOf(["..wb....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "a1", RIGHT, "black")).toEqual([]);
+    });
+
+    it("相手の石の並びの先が空マスなら空配列を返す", () => {
+        // a1=空, b1=白, c1=白。d1 から左へ進むと空マスで閉じられない
+        const board = boardOf([".ww.....", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "d1", LEFT, "black")).toEqual([]);
+    });
+
+    it("相手の石が盤端まで続く方向は空配列を返す", () => {
+        // g1=白, h1=白。f1 から右へ進むと盤外に出て閉じられない
+        const board = boardOf(["......ww", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "f1", RIGHT, "black")).toEqual([]);
+    });
+
+    it("盤端の外へ向かう方向は空配列を返す（反対側へ回り込まない）", () => {
+        // g1=黒, h1=白。a1 から左へ回り込めば h1(白) → g1(黒) で挟めてしまう
+        const board = boardOf(["......bw", ...EMPTY_ROWS.slice(1)]);
+
+        expect(flipsToward(board, "a1", LEFT, "black")).toEqual([]);
+        expect(flipsToward(board, "a1", UP, "black")).toEqual([]);
+    });
+});
+
+describe("listFlipsInDirection: isLegalMove との整合", () => {
+    it("8 方向のいずれかで挟めることと合法手であることは常に一致する", () => {
+        const board = boardOf([
+            "........",
+            "...bw...",
+            "..bwb...",
+            "...wbw..",
+            "..b.w...",
+            "........",
+            "........",
+            "........",
+        ]);
+
+        for (const player of ["black", "white"] as const) {
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const coord: Coord = { row, col };
+                    // isLegalMove は空マスであることも条件に含む
+                    const flippable =
+                        getCell(board, coord) === "empty" &&
+                        DIRECTIONS.some(
+                            (direction) =>
+                                listFlipsInDirection(board, coord, direction, player).length > 0,
+                        );
+
+                    expect(flippable, `${formatSquare(coord) ?? `${row},${col}`} (${player})`).toBe(
+                        isLegalMove(board, coord, player),
+                    );
+                }
+            }
+        }
+    });
+});
+
+describe("listFlipsInDirection: 副作用がない", () => {
+    it("走査しても盤面の内容が変わらない", () => {
+        const board = createInitialBoard();
+        const before = JSON.stringify(board);
+
+        for (const direction of DIRECTIONS) {
+            listFlipsInDirection(board, parseSquare("d3")!, direction, "black");
+        }
+
+        expect(JSON.stringify(board)).toBe(before);
     });
 });
 
