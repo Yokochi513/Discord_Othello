@@ -7,7 +7,7 @@
  */
 
 // 型
-export type { Cell, Coord, File, Player, Rank, Square } from "./type.js";
+export type { Cell, Coord, File, Player, Rank, Square, TurnResult } from "./type.js";
 export type { Board, CellCount } from "./board.js";
 
 // 座標系
@@ -24,3 +24,6 @@ export { isLegalMove, listLegalMoves, hasLegalMove } from "./moves.js";
 
 // 着手の適用
 export { listFlips, applyMove, IllegalMoveError } from "./apply.js";
+
+// 手番遷移
+export { nextTurn, passedPlayers } from "./turn.js";
