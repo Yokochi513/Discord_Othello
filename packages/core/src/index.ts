@@ -7,7 +7,7 @@
  */
 
 // 型
-export type { Cell, Coord, File, Player, Rank, Square } from "./type.js";
+export type { Cell, Coord, File, Player, Rank, Square, TurnResult } from "./type.js";
 export type { Board, CellCount } from "./board.js";
 
 // 座標系
