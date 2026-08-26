@@ -21,3 +21,6 @@ export { FIRST_PLAYER, opponent } from "./player.js";
 
 // 合法手
 export { isLegalMove, listLegalMoves, hasLegalMove } from "./moves.js";
+
+// 着手の適用
+export { listFlips, applyMove, IllegalMoveError } from "./apply.js";
