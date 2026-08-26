@@ -21,6 +21,7 @@ export type {
     GameResult,
 } from "./type.js";
 export type { Board, CellCount } from "./board.js";
+export type { GameState, MoveEntry, MoveLog } from "./game.js";
 
 // 座標系
 export { BOARD_SIZE, formatSquare, isSquare, parseSquare } from "./coord.js";
@@ -49,3 +50,13 @@ export {
     resignGame,
     winnerOf,
 } from "./result.js";
+
+// 対局状態と棋譜
+export {
+    createGameState,
+    playMove,
+    replayGame,
+    restoreGameState,
+    InvalidSquareError,
+    NotYourTurnError,
+} from "./game.js";
