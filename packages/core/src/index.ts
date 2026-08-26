@@ -24,3 +24,6 @@ export { isLegalMove, listLegalMoves, hasLegalMove } from "./moves.js";
 
 // 着手の適用
 export { listFlips, applyMove, IllegalMoveError } from "./apply.js";
+
+// 手番遷移
+export { nextTurn, passedPlayers } from "./turn.js";
