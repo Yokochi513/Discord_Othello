@@ -24,6 +24,51 @@ export const DIRECTIONS: readonly Direction[] = [
 ];
 
 /**
+ * 座標を指定方向へ1ステップ進める。
+ * @param coord 起点の内部インデックス
+ * @param direction 進む方向
+ * @returns 1ステップ進めた後の内部インデックス。盤外になりえるため、参照時にgetCellで判定すること
+ */
+export function step(coord: Coord, direction: Direction): Coord {
+    return {
+        row: coord.row + direction.rowDelta,
+        col: coord.col + direction.colDelta,
+    };
+}
+
+/**
+ * coordにplayerが着手したと仮定し、direction方向で挟める相手の石を列挙する。
+ * 8方向の走査で共通に使う最小単位で、盤端・空マス・自石で必ず打ち切り。
+ * coord自身が空マスかどうかは判定しないため、呼び出し側で保証すること。
+ * @param board 対象の盤面
+ * @param coord 着手するマスの内部インデックス
+ * @param direction 走査する方向
+ * @param player 着手する側の色
+ * @returns この方向で反転する石の一覧(着手点に近い順)。挟めていない場合は空配列
+ */
+export function listFlipsInDirection(
+    board: Board,
+    coord: Coord,
+    direction: Direction,
+    player: Player,
+): readonly Coord[] {
+    const enemy = opponent(player);
+    const flips: Coord[] = [];
+
+    let current = step(coord, direction);
+    // カレントマスが相手の石である間は進む
+    while (getCell(board, current) === enemy) {
+        flips.push(current);
+        current = step(current, direction);
+    }
+
+    // 相手の石が1枚もない、またはその先が自分の石でなければ挟めない
+    if (flips.length === 0 || getCell(board, current) !== player) return [];
+
+    return flips;
+}
+
+/**
  * 指定したマスが player にとって合法手か判定する。
  * @param board 対象の盤面
  * @param coord 判定するマスの内部インデックス
@@ -34,29 +79,9 @@ export function isLegalMove(board: Board, coord: Coord, player: Player): boolean
     // 盤外、または既に石があるマスにはおけない
     if (getCell(board, coord) !== "empty") return false;
 
-    const enemy = opponent(player);
-
-    // 各方向をチェック
-    for (const direction of DIRECTIONS) {
-        let current: Coord = {
-            row: coord.row + direction.rowDelta,
-            col: coord.col + direction.colDelta,
-        };
-        let hasEnemyBetween = false;
-        // カレントマスが相手の石である
-        while (getCell(board, current) === enemy) {
-            current = {
-                row: current.row + direction.rowDelta,
-                col: current.col + direction.colDelta,
-            };
-            hasEnemyBetween = true;
-        }
-
-        // 相手の石の並びの先が自分の石なら、この方向で挟めている。
-        if (getCell(board, current) === player && hasEnemyBetween) return true;
-    }
-
-    return false;
+    return DIRECTIONS.some(
+        (direction) => listFlipsInDirection(board, coord, direction, player).length > 0,
+    );
 }
 
 /**
