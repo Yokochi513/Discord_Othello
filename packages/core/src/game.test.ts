@@ -9,7 +9,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { freezeBoard, type Board } from "./board.js";
 import { formatSquare } from "./coord.js";
 import {
     createGameState,
@@ -21,16 +20,9 @@ import {
     type GameState,
 } from "./game.js";
 import { listLegalMoves } from "./moves.js";
-import type { Cell, Square } from "./type.js";
-
-/**
- * 文字列から盤面を組み立てるテスト用ヘルパー。
- * 1 行が盤面の 1 行に対応し、. = 空 / b = 黒 / w = 白 を表す。
- */
-function boardOf(rows: readonly string[]): Board {
-    const cellByChar: Record<string, Cell> = { ".": "empty", b: "black", w: "white" };
-    return freezeBoard(rows.map((row) => [...row].map((char) => cellByChar[char]!)));
-}
+import { resignGame } from "./result.js";
+import { boardOf } from "./testHelpers.js";
+import type { Square } from "./type.js";
 
 /** 関数が投げた例外を返すテスト用ヘルパー。投げなかった場合は null */
 function caught(fn: () => unknown): unknown {
@@ -195,6 +187,40 @@ describe("replayGame: 完了条件① 再生と逐次適用の一致", () => {
         const replayed = replayGame(sequential.log);
 
         expect(replayed).toEqual(sequential);
+    });
+});
+
+describe("通しテスト: 投了による決着", () => {
+    /**
+     * 投了は GameState では扱わず、盤面から resignGame で決着を確定する
+     * （game.ts のコメントの通り、投了は盤面から導けない事象のため result.ts の責務）。
+     */
+    it("対局が終わっていない盤面でも、対局状態から取り出した盤面で投了による決着がつく", () => {
+        let state = createGameState();
+        state = playMove(state, "black", "d3");
+        state = playMove(state, "white", "c3");
+
+        expect(state.turn).not.toBeNull();
+
+        const result = resignGame(state.board, "black");
+
+        expect(result).toEqual({
+            reason: "resign",
+            outcome: "whiteWin",
+            score: { black: 3, white: 3 },
+        });
+    });
+
+    it("投了しても対局状態そのものは変化しない", () => {
+        let state = createGameState();
+        state = playMove(state, "black", "d3");
+        state = playMove(state, "white", "c3");
+        const before = state;
+
+        resignGame(state.board, "white");
+
+        expect(state).toBe(before);
+        expect(state.turn).toBe("black");
     });
 });
 

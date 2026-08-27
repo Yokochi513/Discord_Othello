@@ -8,24 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 import { applyMove } from "./apply.js";
-import { createInitialBoard, freezeBoard } from "./board.js";
-import type { Board } from "./board.js";
+import { createInitialBoard } from "./board.js";
 import { BOARD_SIZE, parseSquare } from "./coord.js";
 import { hasLegalMove } from "./moves.js";
+import { boardOf, EMPTY_ROWS } from "./testHelpers.js";
 import { nextTurn, passedPlayers } from "./turn.js";
-import type { Cell } from "./type.js";
-
-/**
- * 文字列から盤面を組み立てるテスト用ヘルパー。
- * 1 行が盤面の 1 行に対応し、. = 空 / b = 黒 / w = 白 を表す。
- */
-function boardOf(rows: readonly string[]): Board {
-    const cellByChar: Record<string, Cell> = { ".": "empty", b: "black", w: "white" };
-    return freezeBoard(rows.map((row) => [...row].map((char) => cellByChar[char]!)));
-}
-
-/** 空の盤面 8 行ぶん。必要な行だけ差し替えて使う */
-const EMPTY_ROWS = Array.from({ length: BOARD_SIZE }, () => "........");
 
 /**
  * 白だけが打てない盤面。a1=黒, b1=白。
