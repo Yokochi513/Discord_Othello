@@ -7,8 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createInitialBoard, freezeBoard } from "./board.js";
-import type { Board } from "./board.js";
+import { createInitialBoard } from "./board.js";
 import { BOARD_SIZE } from "./coord.js";
 import { hasLegalMove } from "./moves.js";
 import {
@@ -19,19 +18,8 @@ import {
     resignGame,
     winnerOf,
 } from "./result.js";
-import type { Cell, GameResult } from "./type.js";
-
-/**
- * 文字列から盤面を組み立てるテスト用ヘルパー。
- * 1 行が盤面の 1 行に対応し、. = 空 / b = 黒 / w = 白 を表す。
- */
-function boardOf(rows: readonly string[]): Board {
-    const cellByChar: Record<string, Cell> = { ".": "empty", b: "black", w: "white" };
-    return freezeBoard(rows.map((row) => [...row].map((char) => cellByChar[char]!)));
-}
-
-/** 空の盤面 8 行ぶん。必要な行だけ差し替えて使う */
-const EMPTY_ROWS = Array.from({ length: BOARD_SIZE }, () => "........");
+import { boardOf, EMPTY_ROWS } from "./testHelpers.js";
+import type { GameResult } from "./type.js";
 
 /** 黒が 0 枚の盤面。空マスは残っている */
 const BLACK_SHUTOUT = boardOf(["ww......", ...EMPTY_ROWS.slice(1)]);

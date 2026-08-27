@@ -8,30 +8,19 @@
 
 import { describe, expect, it } from "vitest";
 import { applyMove, IllegalMoveError, listFlips } from "./apply.js";
-import { countCells, createInitialBoard, freezeBoard, getCell } from "./board.js";
+import { countCells, createInitialBoard, getCell } from "./board.js";
 import type { Board } from "./board.js";
 import { BOARD_SIZE, formatSquare, parseSquare } from "./coord.js";
 import { isLegalMove, listLegalMoves } from "./moves.js";
 import { opponent } from "./player.js";
+import { boardOf, EMPTY_ROWS } from "./testHelpers.js";
 import type { Cell, Player, Square } from "./type.js";
-
-/**
- * 文字列から盤面を組み立てるテスト用ヘルパー。
- * 1 行が盤面の 1 行に対応し、. = 空 / b = 黒 / w = 白 を表す。
- */
-function boardOf(rows: readonly string[]): Board {
-    const cellByChar: Record<string, Cell> = { ".": "empty", b: "black", w: "white" };
-    return freezeBoard(rows.map((row) => [...row].map((char) => cellByChar[char]!)));
-}
 
 /** 盤面を boardOf と同じ表記の文字列配列へ戻すテスト用ヘルパー */
 function rowsOf(board: Board): string[] {
     const charByCell: Record<Cell, string> = { empty: ".", black: "b", white: "w" };
     return board.map((row) => row.map((cell) => charByCell[cell]).join(""));
 }
-
-/** 空の盤面 8 行ぶん。必要な行だけ差し替えて使う */
-const EMPTY_ROWS = Array.from({ length: BOARD_SIZE }, () => "........");
 
 /**
  * 反転する石を座標表記で返すテスト用ヘルパー。

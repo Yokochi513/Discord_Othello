@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { countCells, countStones, createInitialBoard, freezeBoard, getCell } from "./board.js";
 import type { Board } from "./board.js";
 import { BOARD_SIZE, formatSquare, parseSquare } from "./coord.js";
+import { boardOf } from "./testHelpers.js";
 import type { Cell, Square } from "./type.js";
 
 /** 全 64 マスの座標表記を左上（a1）から順に列挙する */
@@ -27,15 +28,6 @@ function at(board: Board, square: Square): Cell | undefined {
     const coord = parseSquare(square);
     if (coord === null) return undefined;
     return board[coord.row]?.[coord.col];
-}
-
-/**
- * 文字列から盤面を組み立てるテスト用ヘルパー。
- * 1 行が盤面の 1 行に対応し、. = 空 / b = 黒 / w = 白 を表す。
- */
-function boardOf(rows: readonly string[]): Board {
-    const cellByChar: Record<string, Cell> = { ".": "empty", b: "black", w: "white" };
-    return freezeBoard(rows.map((row) => [...row].map((char) => cellByChar[char]!)));
 }
 
 describe("createInitialBoard", () => {
