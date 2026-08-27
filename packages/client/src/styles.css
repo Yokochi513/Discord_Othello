@@ -1,0 +1,68 @@
+/*
+ * Activity の基本スタイル。
+ * Discord の iframe には CSP が適用されるため、外部 CDN のフォントや
+ * スタイルは参照せず、資産は自前で配信する（要件定義 §13）。
+ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #1e1f22;
+    color: #dbdee1;
+    font-family:
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        "Hiragino Sans",
+        "Noto Sans JP",
+        Meiryo,
+        sans-serif;
+    line-height: 1.6;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2rem 1rem;
+}
+
+.app__title {
+    margin: 0;
+    font-size: 1.5rem;
+    letter-spacing: 0.2em;
+}
+
+.app__status {
+    margin: 0;
+    text-align: center;
+}
+
+.app__status--error {
+    color: #f77;
+}
+
+.app__detail {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.25rem 1rem;
+    margin: 0.5rem 0 0;
+    font-size: 0.875rem;
+    color: #b5bac1;
+}
+
+.app__detail dt {
+    text-align: right;
+}
+
+.app__detail dd {
+    margin: 0;
+    text-align: left;
+}
