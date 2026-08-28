@@ -1,7 +1,10 @@
 import jsdoc from "eslint-plugin-jsdoc";
+import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default [
+    // ビルド生成物は検査対象にしない
+    { ignores: ["**/dist/**", "**/coverage/**"] },
     ...tseslint.configs.recommended,
     {
         files: ["packages/core/**/*.ts"],
@@ -38,11 +41,17 @@ export default [
             ],
         },
     },
+    // client は React を使うため、フックの使用規則を検査する
+    {
+        files: ["packages/client/**/*.{ts,tsx}"],
+        plugins: reactHooks.configs.flat.recommended.plugins,
+        rules: reactHooks.configs.flat.recommended.rules,
+    },
     // JSDoc は公開 API の仕様書として扱う。
     // 実装ファイルの export のみを対象とし、テストとテスト用ヘルパーは対象外とする。
     {
-        files: ["packages/**/src/**/*.ts"],
-        ignores: ["packages/**/src/**/*.test.ts"],
+        files: ["packages/**/src/**/*.{ts,tsx}"],
+        ignores: ["packages/**/src/**/*.test.{ts,tsx}"],
         plugins: { jsdoc },
         // 型はシグネチャが持つため、JSDoc 側には型を書かせない
         settings: { jsdoc: { mode: "typescript" } },
