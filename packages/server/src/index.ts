@@ -7,7 +7,10 @@ import { createStaticServer } from "./createServer.ts";
 import { loadConfig } from "./env.ts";
 
 const config = loadConfig();
-const server = createStaticServer({ staticDir: config.staticDir });
+const server = createStaticServer({
+    staticDir: config.staticDir,
+    oauth: { clientId: config.discordClientId, clientSecret: config.discordClientSecret },
+});
 
 server.listen(config.port, config.host, () => {
     console.log(

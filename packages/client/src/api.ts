@@ -32,10 +32,37 @@ export function resolveApiPath(path: string, embedded: boolean): string {
  * @param config クライアントの実行時設定
  * @returns 応答の JSON
  */
-export async function fetchApiJson<T>(path: string, config: ClientConfig): Promise<T> {
-    const response = await fetch(resolveApiPath(path, config.embedded), {
-        headers: { Accept: "application/json" },
-    });
+export function fetchApiJson<T>(path: string, config: ClientConfig): Promise<T> {
+    return requestApiJson<T>(path, config);
+}
+
+/**
+ * サーバー API へ JSON ボディを POST し、応答を JSON として読み取る。
+ * @param path アプリ内の API パス（例: /api/token）
+ * @param config クライアントの実行時設定
+ * @param body リクエストボディ（JSON.stringify される）
+ * @returns 応答の JSON
+ */
+export function postApiJson<T>(path: string, config: ClientConfig, body: unknown): Promise<T> {
+    return requestApiJson<T>(path, config, { method: "POST", body });
+}
+
+// GET/POST 共通のリクエスト処理
+async function requestApiJson<T>(
+    path: string,
+    config: ClientConfig,
+    init?: { readonly method: "POST"; readonly body: unknown },
+): Promise<T> {
+    const requestInit: RequestInit =
+        init === undefined
+            ? { headers: { Accept: "application/json" } }
+            : {
+                  method: init.method,
+                  headers: { Accept: "application/json", "Content-Type": "application/json" },
+                  body: JSON.stringify(init.body),
+              };
+
+    const response = await fetch(resolveApiPath(path, config.embedded), requestInit);
 
     if (!response.ok) {
         throw new Error(`API の呼び出しに失敗しました（HTTP ${response.status}）: ${path}`);

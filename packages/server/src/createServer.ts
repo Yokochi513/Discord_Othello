@@ -1,9 +1,9 @@
 /**
- * 静的ファイル配信サーバー。
+ * オセロサーバーの HTTP サーバー。
  *
- * 本 Issue（M2-1）では `packages/client` のビルド成果物を配信する
- * 最小 HTTP サーバーのみを実装する。OAuth・WebSocket・REST API は
- * 後続 Issue で追加する（要件定義 §5.3）。
+ * `packages/client` のビルド成果物の静的配信に加え、Activity 向けの
+ * OAuth2 トークン交換エンドポイント（`/api/token`）を提供する
+ * （要件定義 §5.3 / §13 / §15）。WebSocket・戦績照会 API は後続 Issue で追加する。
  */
 
 import { createReadStream } from "node:fs";
@@ -15,25 +15,28 @@ import {
 } from "node:http";
 
 import { lookupContentType } from "./mime.ts";
+import { exchangeCodeForToken, fetchDiscordUser, type OAuthConfig } from "./oauth.ts";
 import { resolveStaticFile } from "./staticFile.ts";
 
 /** createStaticServer に渡す設定 */
 export type StaticServerOptions = {
     /** 静的配信のルートディレクトリ（絶対パス） */
     readonly staticDir: string;
+    /** Discord OAuth2 のトークン交換に使う資格情報 */
+    readonly oauth: OAuthConfig;
 };
 
 /**
- * 静的ファイル配信専用の HTTP サーバーを作る。
- * GET / HEAD のみを受け付け、それ以外のメソッドは 405 を返す。
+ * オセロサーバーの HTTP サーバーを作る。
+ * `/api/token`（POST）以外は GET / HEAD のみを受け付け、それ以外のメソッドは 405 を返す。
  * @param options サーバーの設定
  * @returns 未 listen の http.Server
  */
 export function createStaticServer(options: StaticServerOptions): Server {
-    const { staticDir } = options;
+    const { staticDir, oauth } = options;
 
     return createHttpServer((req, res) => {
-        handleRequest(req, res, staticDir).catch((error: unknown) => {
+        handleRequest(req, res, staticDir, oauth).catch((error: unknown) => {
             console.error("リクエスト処理中に例外が発生しました:", error);
             if (!res.headersSent) {
                 res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
@@ -43,19 +46,31 @@ export function createStaticServer(options: StaticServerOptions): Server {
     });
 }
 
-// 1 リクエストを処理する。メソッド判定 → 静的ファイル解決 → 応答の順で行う
+// 1 リクエストを処理する。/api/token → メソッド判定 → 静的ファイル解決 → 応答の順で行う
 async function handleRequest(
     req: IncomingMessage,
     res: ServerResponse,
     staticDir: string,
+    oauth: OAuthConfig,
 ): Promise<void> {
+    const { pathname } = new URL(req.url ?? "/", "http://localhost");
+
+    if (pathname === "/api/token") {
+        if (req.method !== "POST") {
+            res.writeHead(405, { Allow: "POST", "Content-Type": "text/plain; charset=utf-8" });
+            res.end("Method Not Allowed");
+            return;
+        }
+        await handleTokenExchange(req, res, oauth);
+        return;
+    }
+
     if (req.method !== "GET" && req.method !== "HEAD") {
         res.writeHead(405, { Allow: "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" });
         res.end("Method Not Allowed");
         return;
     }
 
-    const { pathname } = new URL(req.url ?? "/", "http://localhost");
     const resolved = await resolveStaticFile(staticDir, pathname);
 
     if (resolved === null) {
@@ -85,4 +100,76 @@ function streamFile(filePath: string, res: ServerResponse): Promise<void> {
         stream.on("close", resolve);
         stream.pipe(res);
     });
+}
+
+// POST /api/token を処理する。認可コードをアクセストークンに交換し、
+// クライアントには access_token のみ返す（client secret は返さない。要件定義 §15）
+async function handleTokenExchange(
+    req: IncomingMessage,
+    res: ServerResponse,
+    oauth: OAuthConfig,
+): Promise<void> {
+    let code: string;
+    try {
+        code = await readAuthorizationCode(req);
+    } catch (error) {
+        res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: toMessage(error) }));
+        return;
+    }
+
+    let token;
+    try {
+        token = await exchangeCodeForToken(oauth, code);
+    } catch (error) {
+        console.error("Discord のトークン交換に失敗しました:", error);
+        res.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "トークン交換に失敗しました" }));
+        return;
+    }
+
+    try {
+        const user = await fetchDiscordUser(token.access_token);
+        console.log(`Discord ユーザーを認証しました: id=${user.id} username=${user.username}`);
+    } catch (error) {
+        // ユーザー情報のログ記録に失敗しても、クライアントは access_token で
+        // sdk.commands.authenticate() を継続できるため致命的エラーにはしない
+        console.error("Discord ユーザー情報の取得に失敗しました:", error);
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify({ access_token: token.access_token }));
+}
+
+// リクエストボディの JSON から認可コード（code）を読み取る
+async function readAuthorizationCode(req: IncomingMessage): Promise<string> {
+    const rawBody = await readRequestBody(req);
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(rawBody);
+    } catch {
+        throw new Error("リクエストボディが JSON として解釈できません");
+    }
+
+    const code = (parsed as { code?: unknown } | null)?.code;
+    if (typeof code !== "string" || code === "") {
+        throw new Error("code が指定されていません");
+    }
+    return code;
+}
+
+// リクエストボディを文字列として読み取る
+function readRequestBody(req: IncomingMessage): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer) => chunks.push(chunk));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+        req.on("error", reject);
+    });
+}
+
+// 例外オブジェクトから応答用のメッセージを取り出す
+function toMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }

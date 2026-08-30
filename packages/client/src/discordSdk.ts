@@ -1,13 +1,13 @@
 /**
- * Discord Embedded App SDK の初期化。
+ * Discord Embedded App SDK の初期化と OAuth2 認証。
  *
- * 本 Issue（M2-2）では ready() までの疎通に限定する。OAuth2 の認可（authorize /
- * トークン交換）は client secret をサーバー側に置く必要があるため、後続 Issue で
- * サーバーと合わせて実装する（要件定義 §13 / §15）。
+ * client secret はサーバー側にのみ保持するため、認可コード（code）の取得はここで行い、
+ * アクセストークンへの交換はサーバーの `/api/token` に委ねる（要件定義 §13 / §15）。
  */
 
 import { DiscordSDK, DiscordSDKMock, type IDiscordSDK } from "@discord/embedded-app-sdk";
 
+import { postApiJson } from "./api.ts";
 import type { ClientConfig } from "./env.ts";
 
 /** SDK の初期化結果 */
@@ -28,7 +28,8 @@ const READY_TIMEOUT_MS = 10_000;
 
 /**
  * Embedded App SDK を初期化し、ready() の完了まで待つ。
- * iframe 外（ブラウザで直接開いた場合）はモックを使い、開発を継続できるようにする。
+ * iframe 内で動作している場合は続けて OAuth2 認証まで行う。
+ * iframe 外（ブラウザで直接開いた場合）はモックを使い、認証は行わず開発を継続できるようにする。
  * @param config クライアントの実行時設定
  * @returns 初期化済みのセッション
  */
@@ -36,11 +37,36 @@ export async function initDiscordSession(config: ClientConfig): Promise<DiscordS
     const sdk = createSdk(config);
     await withTimeout(sdk.ready(), READY_TIMEOUT_MS);
 
+    if (config.embedded) {
+        await authenticate(sdk, config);
+    }
+
     return {
         sdk,
         instanceId: sdk.instanceId,
         embedded: config.embedded,
     };
+}
+
+/** サーバーの POST /api/token が返す応答 */
+type TokenResponse = {
+    readonly access_token: string;
+};
+
+// authorize() で認可コードを取得し、サーバーでアクセストークンに交換した上で
+// SDK を認証する（本人確認そのものは Discord 側が行う。要件定義 §11.5）
+async function authenticate(sdk: IDiscordSDK, config: ClientConfig): Promise<void> {
+    const { code } = await sdk.commands.authorize({
+        client_id: config.discordClientId,
+        response_type: "code",
+        scope: ["identify"],
+    });
+
+    const { access_token: accessToken } = await postApiJson<TokenResponse>("/api/token", config, {
+        code,
+    });
+
+    await sdk.commands.authenticate({ access_token: accessToken });
 }
 
 // 実行環境に応じて実物とモックを選ぶ。
