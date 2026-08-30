@@ -16,6 +16,10 @@ export type ServerConfig = {
     readonly host: string;
     /** 静的配信のルートディレクトリ（絶対パス） */
     readonly staticDir: string;
+    /** Discord アプリケーションの Client ID（OAuth2 トークン交換用） */
+    readonly discordClientId: string;
+    /** Discord アプリケーションの Client Secret（OAuth2 トークン交換用。要件定義 §13 / §15） */
+    readonly discordClientSecret: string;
 };
 
 /** PORT 未指定時のデフォルト値 */
@@ -52,6 +56,22 @@ function parsePort(value: string | undefined): number {
 }
 
 /**
+ * 必須の環境変数を読み込む。未設定・空文字は起動時の設定不備として例外にする。
+ * @param env 読み込み元の環境変数
+ * @param key 環境変数名
+ * @returns 環境変数の値
+ */
+function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
+    const value = env[key];
+    if (value === undefined || value === "") {
+        throw new Error(
+            `${key} が未設定です（Discord アプリケーションの資格情報を設定してください）`,
+        );
+    }
+    return value;
+}
+
+/**
  * 環境変数からサーバー設定を読み込む。
  * @param env 読み込み元の環境変数。省略時は process.env
  * @returns サーバー設定
@@ -64,5 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
             env.STATIC_DIR !== undefined && env.STATIC_DIR !== ""
                 ? path.resolve(env.STATIC_DIR)
                 : resolveDefaultStaticDir(import.meta.url),
+        discordClientId: requireEnv(env, "DISCORD_CLIENT_ID"),
+        discordClientSecret: requireEnv(env, "DISCORD_CLIENT_SECRET"),
     };
 }
