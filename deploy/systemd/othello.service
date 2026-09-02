@@ -1,0 +1,23 @@
+[Unit]
+Description=Discord Othello Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yokochi
+WorkingDirectory=/opt/Discord_Othello/packages/server
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+# 3000 は別プロセスが使用中のため 3100 を使う（§1.2.4 / §5.3.1）
+Environment=PORT=3100
+EnvironmentFile=/etc/othello/othello.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=15s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=othello
+
+[Install]
+WantedBy=multi-user.target
