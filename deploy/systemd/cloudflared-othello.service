@@ -1,0 +1,23 @@
+[Unit]
+Description=Cloudflare Tunnel (othello)
+Wants=network-online.target
+After=network-online.target nss-lookup.target
+StartLimitIntervalSec=300
+StartLimitBurst=12
+
+[Service]
+Type=notify
+User=yokochi
+# 起動時に DNS が引けるまで待つ（§1.2.3.1。最大 120 秒）
+ExecStartPre=/usr/local/sbin/yoko-wait-cloudflare-network
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/othello.yml tunnel run
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=180s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared-othello
+
+[Install]
+WantedBy=multi-user.target
