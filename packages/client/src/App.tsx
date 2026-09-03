@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { initDiscordSession, type DiscordSession } from "./discordSdk.ts";
 import { loadClientConfig } from "./env.ts";
+import { toErrorMessage } from "./errorMessage.ts";
 
 // 初期化の進行状態
 type InitState =
@@ -34,7 +35,7 @@ export function App(): React.JSX.Element {
                 const session = await initDiscordSession(config);
                 if (!cancelled) setState({ status: "ready", session });
             } catch (error) {
-                if (!cancelled) setState({ status: "error", message: toMessage(error) });
+                if (!cancelled) setState({ status: "error", message: toErrorMessage(error) });
             }
         })();
 
@@ -77,9 +78,4 @@ function renderStatus(state: InitState): React.JSX.Element {
                 </p>
             );
     }
-}
-
-// 例外オブジェクトから表示用のメッセージを取り出す
-function toMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
