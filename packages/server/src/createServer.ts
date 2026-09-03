@@ -3,7 +3,7 @@
  *
  * `packages/client` のビルド成果物の静的配信に加え、Activity 向けの
  * OAuth2 トークン交換エンドポイント（`/api/token`）を提供する
- * （要件定義 §5.3 / §13 / §15）。WebSocket・戦績照会 API は後続 Issue で追加する。
+ * （要件定義 §5.3 / §13 / §15）。同じ HTTP サーバー上で WebSocket も提供する。
  */
 
 import { createReadStream } from "node:fs";
@@ -17,6 +17,11 @@ import {
 import { lookupContentType } from "./mime.ts";
 import { exchangeCodeForToken, fetchDiscordUser, type OAuthConfig } from "./oauth.ts";
 import { resolveStaticFile } from "./staticFile.ts";
+import {
+    attachWebSocketServer,
+    type WebSocketHub,
+    type WebSocketOptions,
+} from "./webSocket.ts";
 
 /** createStaticServer に渡す設定 */
 export type StaticServerOptions = {
@@ -24,7 +29,12 @@ export type StaticServerOptions = {
     readonly staticDir: string;
     /** Discord OAuth2 のトークン交換に使う資格情報 */
     readonly oauth: OAuthConfig;
+    /** WebSocket 認証・ログの差し替え（主にテスト用） */
+    readonly websocket?: WebSocketOptions;
 };
+
+/** HTTP サーバーと、同じポートで動く WebSocket ルーム管理API。 */
+export type OthelloServer = Server & { readonly webSocketHub: WebSocketHub };
 
 /**
  * オセロサーバーの HTTP サーバーを作る。
@@ -32,10 +42,10 @@ export type StaticServerOptions = {
  * @param options サーバーの設定
  * @returns 未 listen の http.Server
  */
-export function createStaticServer(options: StaticServerOptions): Server {
+export function createStaticServer(options: StaticServerOptions): OthelloServer {
     const { staticDir, oauth } = options;
 
-    return createHttpServer((req, res) => {
+    const server = createHttpServer((req, res) => {
         handleRequest(req, res, staticDir, oauth).catch((error: unknown) => {
             console.error("リクエスト処理中に例外が発生しました:", error);
             if (!res.headersSent) {
@@ -43,7 +53,10 @@ export function createStaticServer(options: StaticServerOptions): Server {
             }
             res.end("Internal Server Error");
         });
-    });
+    }) as OthelloServer;
+    const webSocketHub = attachWebSocketServer(server, options.websocket);
+    Object.defineProperty(server, "webSocketHub", { value: webSocketHub, enumerable: true });
+    return server;
 }
 
 // 1 リクエストを処理する。/api/token → メソッド判定 → 静的ファイル解決 → 応答の順で行う
