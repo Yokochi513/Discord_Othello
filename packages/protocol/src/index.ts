@@ -17,22 +17,24 @@ export type ServerMessage =
 
 /** 盤上の座標。 */
 export type Square = `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${
-    | "1"
-    | "2"
-    | "3"
-    | "4"
-    | "5"
-    | "6"
-    | "7"
-    | "8"}`;
+    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"}`;
 
-/** プレイヤーが着席している場合の公開情報。 */
-export type Seat = { readonly userId: string; readonly displayName: string } | null;
+/**
+ * ロビーに参加している人物の公開情報。
+ * サーバーが保持するのは User ID と表示名のみで、アバターはクライアントが
+ * Discord SDK から解決する（要件定義 §11.5）。
+ */
+export type Participant = { readonly userId: string; readonly displayName: string };
+
+/** プレイヤーが着席している場合の公開情報。空席は null。 */
+export type Seat = Participant | null;
 
 /** Activity インスタンスに属するロビーと対局のスナップショット。 */
 export type RoomState = {
     readonly instanceId: string;
     readonly seats: { readonly black: Seat; readonly white: Seat };
+    /** 座席に着いていない参加者（要件定義 §7.2 / F-13）。 */
+    readonly spectators: readonly Participant[];
     readonly game: GameState | null;
 };
 
