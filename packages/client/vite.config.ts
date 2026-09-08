@@ -4,6 +4,9 @@ import { defineConfig } from "vite";
 /** 開発時に API を中継する先（packages/server の既定ポート） */
 const API_TARGET = "http://localhost:3000";
 
+/** 開発時に WebSocket を中継する先（packages/server の /ws） */
+const WS_TARGET = "ws://localhost:3000";
+
 export default defineConfig({
     plugins: [react()],
     build: {
@@ -29,6 +32,13 @@ export default defineConfig({
             "/.proxy/api": {
                 target: API_TARGET,
                 changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/\.proxy/, ""),
+            },
+            // 対局同期の WebSocket も同様に、素のパスとプロキシ経由の両方を中継する
+            "/ws": { target: WS_TARGET, ws: true },
+            "/.proxy/ws": {
+                target: WS_TARGET,
+                ws: true,
                 rewrite: (path) => path.replace(/^\/\.proxy/, ""),
             },
         },
