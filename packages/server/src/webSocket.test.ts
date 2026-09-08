@@ -1,6 +1,6 @@
 import type { AddressInfo } from "node:net";
 
-import type { GameState, Participant, RoomState, ServerMessage } from "@othello/protocol";
+import type { GameState, Participant, RoomState, ServerMessage, Square } from "@othello/protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 
@@ -8,6 +8,12 @@ import { createStaticServer, type OthelloServer } from "./createServer.ts";
 
 /** 対局に必要な 3 接続（黒番・白番・観戦者） */
 type Players = { black: WebSocket; white: WebSocket; spectator: WebSocket };
+
+/** 8 手目（白の c1）で黒の合法手が無くなり、黒の自動パスが起きる棋譜。 */
+const PASS_GAME: readonly Square[] = ["d3", "c3", "e6", "d2", "d1", "e1", "b2", "c1"];
+
+/** 9 手目で白の石が 0 枚になり、完封で終局する棋譜。 */
+const SHUTOUT_GAME: readonly Square[] = ["e6", "f4", "e3", "f6", "g5", "d6", "e7", "f5", "c5"];
 
 describe("WebSocket server", () => {
     let server: OthelloServer;
@@ -133,6 +139,24 @@ describe("WebSocket server", () => {
         const state = await receiveState(client);
         if (state.game === null) throw new Error("対局が載っていません");
         return state.game;
+    }
+
+    // 黒白が交互に打つ棋譜を最後まで送り、着手ごとの盤面配信を読み飛ばす
+    async function playMoves(
+        players: Players,
+        gameId: string,
+        squares: readonly Square[],
+    ): Promise<void> {
+        for (const [index, square] of squares.entries()) {
+            const mover = index % 2 === 0 ? players.black : players.white;
+            mover.send(JSON.stringify({ type: "move", gameId, square }));
+            for (const client of everyone(players)) await receiveGame(client);
+        }
+    }
+
+    // 対局に関わる 3 接続を配信の確認順に並べる
+    function everyone(players: Players): readonly WebSocket[] {
+        return [players.black, players.white, players.spectator];
     }
 
     it("認証したユーザーとインスタンスを接続通知に含める", async () => {
@@ -446,6 +470,140 @@ describe("WebSocket server", () => {
         expect(await receive(late)).toMatchObject({ type: "connected" });
 
         expect((await receiveState(late)).game).toMatchObject({ id: "game-1", turn: "black" });
+    });
+
+    it("F-09: 自動パスを盤面に続けて全員へ知らせる", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+
+        await playMoves(players, game.id, PASS_GAME);
+
+        for (const client of everyone(players)) {
+            expect(await receive(client)).toEqual({
+                type: "passed",
+                gameId: "game-1",
+                passedBy: ["black"],
+            });
+        }
+        // 黒が打てないため手番は白のまま戻る
+        expect(server.webSocketHub.game("room-a")?.state.turn).toBe("white");
+        expect(log.log).toHaveBeenCalledWith("自動パス: gameId=game-1 passedBy=black");
+    });
+
+    it("F-10: 終局を勝敗つきで全員へ配信する", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+
+        await playMoves(players, game.id, SHUTOUT_GAME);
+
+        for (const client of everyone(players)) {
+            expect(await receive(client)).toMatchObject({
+                type: "game_ended",
+                result: { reason: "shutout", outcome: "black_win" },
+                game: { id: "game-1", turn: null, scores: { black: 13, white: 0 } },
+            });
+        }
+        expect(log.log).toHaveBeenCalledWith(
+            "対局終了: gameId=game-1 instanceId=room-a reason=shutout outcome=black_win " +
+                "black=13 white=0",
+        );
+    });
+
+    it("F-11: 投了を受理し、投了した側の負けとして全員へ配信する", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+
+        players.white.send(JSON.stringify({ type: "resign", gameId: game.id }));
+
+        for (const client of everyone(players)) {
+            expect(await receive(client)).toMatchObject({
+                type: "game_ended",
+                result: { reason: "resign", outcome: "black_win" },
+                game: { turn: null, scores: { black: 2, white: 2 } },
+            });
+        }
+        expect(log.log).toHaveBeenCalledWith(
+            "対局終了: gameId=game-1 instanceId=room-a reason=resign outcome=black_win " +
+                "black=2 white=2",
+        );
+    });
+
+    it("観戦者の投了を拒否する", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+
+        players.spectator.send(JSON.stringify({ type: "resign", gameId: game.id }));
+
+        expect(await receive(players.spectator)).toEqual({
+            type: "error",
+            code: "unauthorized",
+            message: "観戦者は投了できません",
+        });
+        await expectNoBroadcast(players.black);
+    });
+
+    it("終了した対局への投了を拒否する", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+        players.black.send(JSON.stringify({ type: "resign", gameId: game.id }));
+        for (const client of everyone(players)) await receive(client);
+
+        players.white.send(JSON.stringify({ type: "resign", gameId: game.id }));
+
+        expect(await receive(players.white)).toEqual({
+            type: "error",
+            code: "invalid_state",
+            message: "対局は既に終了しています",
+        });
+    });
+
+    it("F-12: 中断を無効試合として終え、対局を破棄してロビーへ戻す", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+
+        players.black.send(JSON.stringify({ type: "abort", gameId: game.id }));
+
+        for (const client of everyone(players)) {
+            expect(await receive(client)).toMatchObject({
+                type: "game_ended",
+                result: { reason: "abort", outcome: null },
+                game: { turn: null },
+            });
+            expect((await receiveState(client)).game).toBeNull();
+        }
+        expect(server.webSocketHub.game("room-a")).toBeNull();
+    });
+
+    it("E-09: 対局中の離脱を無効試合として終え、残った全員へ配信する", async () => {
+        const players = await seatBoth("room-a");
+        await startGame(players);
+
+        players.white.close();
+
+        for (const client of [players.black, players.spectator]) {
+            expect(await receive(client)).toMatchObject({
+                type: "game_ended",
+                result: { reason: "disconnect", outcome: null },
+            });
+            const state = await receiveState(client);
+            expect(state.game).toBeNull();
+            expect(state.seats.white).toBeNull();
+        }
+        expect(server.webSocketHub.game("room-a")).toBeNull();
+        expect(log.log).toHaveBeenCalledWith(
+            "対局終了: gameId=game-1 instanceId=room-a reason=disconnect outcome=無効試合 " +
+                "black=2 white=2",
+        );
+    });
+
+    it("対局していない参加者の離脱では対局を終えない", async () => {
+        const players = await seatBoth("room-a");
+        await startGame(players);
+
+        players.spectator.close();
+
+        expect(await receiveState(players.black)).toMatchObject({ spectators: [] });
+        expect(server.webSocketHub.game("room-a")?.result).toBeNull();
     });
 
     it("同時に進む対局は互いに影響しない", async () => {

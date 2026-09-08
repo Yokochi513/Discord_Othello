@@ -7,6 +7,7 @@ describe("isClientMessage", () => {
         expect(isClientMessage({ type: "seat", seat: "black" })).toBe(true);
         expect(isClientMessage({ type: "move", gameId: "game-1", square: "e6" })).toBe(true);
         expect(isClientMessage({ type: "resign", gameId: "game-1" })).toBe(true);
+        expect(isClientMessage({ type: "abort", gameId: "game-1" })).toBe(true);
     });
 
     it("不正な入力を拒否する", () => {
