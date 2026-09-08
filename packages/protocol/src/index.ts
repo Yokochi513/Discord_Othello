@@ -38,11 +38,20 @@ export type RoomState = {
     readonly game: GameState | null;
 };
 
-/** クライアント表示に必要な対局状態。 */
+/** クライアント表示に必要な対局状態（要件定義 §7.3）。 */
 export type GameState = {
     readonly id: string;
     readonly board: readonly (readonly ("black" | "white" | "empty")[])[];
-    readonly turn: "black" | "white";
+    /** 現在の手番。終局している場合は null */
+    readonly turn: "black" | "white" | null;
+    /** 黒白それぞれの石数 */
+    readonly scores: { readonly black: number; readonly white: number };
+    /** 経過手数。自動パスも 1 手として数える */
+    readonly moveCount: number;
+    /** 直前に打たれた手。まだ着手がなければ null */
+    readonly lastMove: Square | null;
+    /** 対局している 2 人。対局開始時の座席で確定する */
+    readonly players: { readonly black: Participant; readonly white: Participant };
 };
 
 /** 対局の終了理由。 */

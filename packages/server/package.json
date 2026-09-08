@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@othello/core": "*",
     "@othello/protocol": "*",
     "ws": "^8.18.3"
   },

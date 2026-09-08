@@ -1,9 +1,10 @@
 import type { Server } from "node:http";
 import type { Duplex } from "node:stream";
 
-import type { ClientMessage, Participant, ServerMessage } from "@othello/protocol";
+import type { ClientMessage, Participant, ServerMessage, Square } from "@othello/protocol";
 import { WebSocket, WebSocketServer } from "ws";
 
+import { GameStore, toGameView, type GameSession, type SessionResult } from "./gameSession.ts";
 import {
     LobbyStore,
     toRoomState,
@@ -20,6 +21,8 @@ export type WebSocketIdentity = { readonly id: string; readonly displayName: str
 export type WebSocketOptions = {
     /** テスト時には Discord API の代替を注入できる。 */
     readonly authenticate?: (accessToken: string) => Promise<WebSocketIdentity>;
+    /** 対局IDの採番。テストでは決め打ちの実装を渡せる。 */
+    readonly createGameId?: () => string;
     readonly log?: Pick<Console, "log" | "error">;
 };
 
@@ -30,11 +33,19 @@ export type WebSocketConnection = {
     readonly instanceId: string;
 };
 
-/** Activity インスタンス単位の接続・ロビー状態・配信を管理する。 */
+/** Activity インスタンス単位の接続・ロビー状態・対局・配信を管理する。 */
 export class WebSocketHub {
     readonly #rooms = new Map<string, Map<WebSocket, WebSocketConnection>>();
-    readonly #activeGames = new Map<string, string>();
     readonly #lobbies = new LobbyStore();
+    readonly #games: GameStore;
+
+    /**
+     * インスタンス単位のハブを作る。
+     * @param createGameId 対局IDの採番。省略時は randomUUID
+     */
+    constructor(createGameId?: () => string) {
+        this.#games = createGameId === undefined ? new GameStore() : new GameStore(createGameId);
+    }
 
     /** 接続を認証済みインスタンスのルームへ登録する。
      * @param socket WebSocket 接続
@@ -64,18 +75,10 @@ export class WebSocketHub {
      * @param message サーバーメッセージ
      */
     broadcast(instanceId: string, message: ServerMessage): void {
-        // ロビーだけの配信（state.game === null）では対局IDを消さない。
-        // 対局の終了は game_ended で明示される。
-        if (message.type === "game_started") {
-            this.#activeGames.set(instanceId, message.game.id);
-        } else if (message.type === "state" && message.state.game !== null) {
-            this.#activeGames.set(instanceId, message.state.game.id);
-        }
         const encoded = JSON.stringify(message);
         for (const socket of this.#rooms.get(instanceId)?.keys() ?? []) {
             if (socket.readyState === WebSocket.OPEN) socket.send(encoded);
         }
-        if (message.type === "game_ended") this.#activeGames.delete(instanceId);
     }
 
     /** 指定インスタンスの現在の接続数を返す。
@@ -98,13 +101,43 @@ export class WebSocketHub {
         return false;
     }
 
-    /** 対局IDが、そのインスタンスに対してサーバーから通知済みかを検査する。
+    /** 対局IDが、そのインスタンスで進行中の対局のものかを検査する。
      * @param instanceId Activity インスタンスID
      * @param gameId クライアントから提示された対局ID
      * @returns 現在の対局と一致する場合は true
      */
     authorizesGame(instanceId: string, gameId: string): boolean {
-        return this.#activeGames.get(instanceId) === gameId;
+        return this.#games.isCurrentGame(instanceId, gameId);
+    }
+
+    /** 指定インスタンスの対局セッションを返す。
+     * @param instanceId Activity インスタンスID
+     * @returns 対局セッション。まだ対局していなければ null
+     */
+    game(instanceId: string): GameSession | null {
+        return this.#games.get(instanceId);
+    }
+
+    /** 両席が埋まったロビーから対局を始める（要件定義 F-05）。
+     * @param connection 認証済みコンテキスト
+     * @returns 生成した対局セッション、または拒否理由
+     */
+    startGame(connection: WebSocketConnection): SessionResult {
+        return this.#games.start(
+            connection.instanceId,
+            this.lobby(connection.instanceId),
+            connection.userId,
+        );
+    }
+
+    /** 着手を検証して盤面へ適用する（要件定義 F-07）。
+     * @param connection 認証済みコンテキスト
+     * @param gameId クライアントから提示された対局ID
+     * @param square 着手する座標表記
+     * @returns 適用後のセッション、または拒否理由
+     */
+    playMove(connection: WebSocketConnection, gameId: string, square: Square): SessionResult {
+        return this.#games.play(connection.instanceId, gameId, connection.userId, square);
     }
 
     /** 指定インスタンスのロビー状態を返す。
@@ -148,12 +181,19 @@ export class WebSocketHub {
         return this.#lobbies.leave(connection.instanceId, connection.userId).changed;
     }
 
-    /** 現在のロビー状態をルーム全員へ配信する（要件定義 F-02）。
+    /** ロビーと進行中の対局をまとめたルーム状態を全員へ配信する（要件定義 F-02 / F-06）。
+     * 対局中の接続者にも同じ状態が届くため、観戦者も盤面を追える（F-13）。
      * @param instanceId Activity インスタンスID
      */
-    broadcastLobby(instanceId: string): void {
-        // 進行中の対局は M3-3 のゲームセッションが持つため、ここでは常に null を送る。
-        this.broadcast(instanceId, { type: "state", state: toRoomState(this.lobby(instanceId)) });
+    broadcastState(instanceId: string): void {
+        const session = this.game(instanceId);
+        this.broadcast(instanceId, {
+            type: "state",
+            state: toRoomState(
+                this.lobby(instanceId),
+                session === null ? null : toGameView(session),
+            ),
+        });
     }
 }
 
@@ -170,7 +210,7 @@ export function attachWebSocketServer(
     const authenticate = options.authenticate ?? authenticateWithDiscord;
     const log = options.log ?? console;
     const websocketServer = new WebSocketServer({ noServer: true });
-    const hub = new WebSocketHub();
+    const hub = new WebSocketHub(options.createGameId);
 
     server.on("upgrade", (request, socket, head) => {
         const url = new URL(request.url ?? "/", "http://localhost");
@@ -218,7 +258,7 @@ export function attachWebSocketServer(
             );
             // 接続直後は観戦者として参加し、参加者一覧を全員へ配り直す（要件定義 F-02・F-13）。
             hub.joinLobby(connection);
-            hub.broadcastLobby(connection.instanceId);
+            hub.broadcastState(connection.instanceId);
 
             socket.on("message", (data) => {
                 const message = parseClientMessage(data.toString());
@@ -226,19 +266,28 @@ export function attachWebSocketServer(
                     sendError(socket, "invalid_message", "メッセージの形式が不正です");
                     return;
                 }
+                // E-05: 進行中の対局と一致しない対局IDの操作は受け付けない（要件定義 §15）
                 if (
                     "gameId" in message &&
                     !hub.authorizesGame(connection.instanceId, message.gameId)
                 ) {
-                    sendError(socket, "unauthorized", "この対局を操作する権限がありません");
+                    sendError(socket, "game_not_found", "対局が見つかりません");
                     return;
                 }
                 if (message.type === "seat" || message.type === "leave") {
                     handleLobbyMessage(hub, socket, connection, message, log);
                     return;
                 }
-                // 対局操作の実行は後続 Issue のゲームセッションに委ねる。ここでは必ず認証済み
-                // 接続に紐づくため、ユーザー ID やインスタンス ID を本文から偽装できない。
+                if (message.type === "start_game") {
+                    handleStartGame(hub, socket, connection, log);
+                    return;
+                }
+                if (message.type === "move") {
+                    handleMove(hub, socket, connection, message, log);
+                    return;
+                }
+                // 投了・中断の実行は後続 Issue に委ねる。ここでは必ず認証済み接続に紐づくため、
+                // ユーザー ID やインスタンス ID を本文から偽装できない。
                 socket.emit("authorizedMessage", message, connection);
             });
 
@@ -249,7 +298,7 @@ export function attachWebSocketServer(
                     !hub.hasConnection(connection.instanceId, connection.userId) &&
                     hub.leaveLobby(connection)
                 ) {
-                    hub.broadcastLobby(connection.instanceId);
+                    hub.broadcastState(connection.instanceId);
                 }
                 log.log(
                     `WebSocket 切断: userId=${connection.userId} instanceId=${connection.instanceId}`,
@@ -284,7 +333,52 @@ function handleLobbyMessage(
         if (!hub.leaveSeat(connection)) return;
         log.log(`退席: userId=${connection.userId} instanceId=${connection.instanceId}`);
     }
-    hub.broadcastLobby(connection.instanceId);
+    hub.broadcastState(connection.instanceId);
+}
+
+// 対局を開始し、全員を対局画面へ遷移させる（要件定義 F-05）
+function handleStartGame(
+    hub: WebSocketHub,
+    socket: WebSocket,
+    connection: WebSocketConnection,
+    log: Pick<Console, "log" | "error">,
+): void {
+    const result = hub.startGame(connection);
+    if (!result.ok) {
+        sendError(socket, result.code, result.message);
+        return;
+    }
+    const { id, players } = result.session;
+    log.log(
+        `対局開始: gameId=${id} instanceId=${connection.instanceId} ` +
+            `black=${players.black.userId} white=${players.white.userId}`,
+    );
+    hub.broadcast(connection.instanceId, {
+        type: "game_started",
+        game: toGameView(result.session),
+    });
+}
+
+// 着手を受理し、更新後の盤面をルーム全員（観戦者含む）へ配信する（要件定義 F-06・F-07）
+function handleMove(
+    hub: WebSocketHub,
+    socket: WebSocket,
+    connection: WebSocketConnection,
+    message: Extract<ClientMessage, { type: "move" }>,
+    log: Pick<Console, "log" | "error">,
+): void {
+    const result = hub.playMove(connection, message.gameId, message.square);
+    if (!result.ok) {
+        // 拒否した場合は盤面を変えず、要求元にだけエラーを返す（要件定義 §14 E-01〜E-04）
+        log.log(
+            `着手を拒否: userId=${connection.userId} square=${message.square} ` +
+                `gameId=${message.gameId} code=${result.code}`,
+        );
+        sendError(socket, result.code, result.message);
+        return;
+    }
+    log.log(`着手: userId=${connection.userId} square=${message.square} gameId=${message.gameId}`);
+    hub.broadcastState(connection.instanceId);
 }
 
 // 認証コンテキストから、ロビーが保持する参加者情報を作る
