@@ -3,7 +3,7 @@
  *
  * Discord SDK の初期化後にサーバーへ WebSocket 接続し、サーバーから届く状態通知だけで
  * ロビー・対局・終局を切り替える（要件定義 §5.4 / §7.1）。
- * ロビー画面は Lobby.tsx が受け持つ。対局・終局の作り込みは M3-7〜M3-8 で行うため、
+ * ロビー画面は Lobby.tsx、対局画面は Game.tsx が受け持つ。終局の作り込みは M3-8 で行うため、
  * ここでは状態が正しく遷移していることを確かめられる最小限の表示に留める。
  */
 
@@ -14,15 +14,10 @@ import { useEffect, useState } from "react";
 import { initDiscordSession, type DiscordSession } from "./discordSdk.ts";
 import { loadClientConfig, type ClientConfig } from "./env.ts";
 import { toErrorMessage } from "./errorMessage.ts";
+import { Game } from "./Game.tsx";
 import { Lobby } from "./Lobby.tsx";
 import type { AvatarMap } from "./participants.ts";
-import {
-    selectGame,
-    selectIsPlayer,
-    selectPhase,
-    type ClientState,
-    type SeatId,
-} from "./roomState.ts";
+import { selectPhase, type ClientState, type SeatId } from "./roomState.ts";
 import { useGameSession, type GameActions } from "./useGameSession.ts";
 import { useParticipantAvatars } from "./useParticipants.ts";
 
@@ -193,41 +188,6 @@ function ErrorNotice({
                 閉じる
             </button>
         </p>
-    );
-}
-
-// 対局画面。盤面の描画と着手は M3-7 で行うため、ここでは進行状況だけを示す
-function Game({
-    state,
-    actions,
-}: {
-    readonly state: ClientState;
-    readonly actions: GameActions;
-}): React.JSX.Element {
-    const game = selectGame(state);
-    if (game === null) return <p className="app__status">対局を読み込んでいます…</p>;
-
-    return (
-        <section className="app__screen">
-            <h2 className="app__heading">対局中</h2>
-            <GameDetail game={game} />
-            {state.passedBy.length > 0 && (
-                <p className="app__notice">
-                    {state.passedBy.map((seat) => SEAT_LABELS[seat]).join("・")}
-                    は打てるマスが無いためパスしました
-                </p>
-            )}
-            {selectIsPlayer(state) && (
-                <div className="app__actions">
-                    <button type="button" onClick={actions.resign}>
-                        投了
-                    </button>
-                    <button type="button" onClick={actions.abort}>
-                        中断
-                    </button>
-                </div>
-            )}
-        </section>
     );
 }
 
