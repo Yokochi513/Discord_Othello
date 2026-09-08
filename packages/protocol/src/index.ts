@@ -12,7 +12,13 @@ export type ServerMessage =
     | { readonly type: "connected"; readonly userId: string; readonly instanceId: string }
     | { readonly type: "state"; readonly state: RoomState }
     | { readonly type: "game_started"; readonly game: GameState }
-    | { readonly type: "game_ended"; readonly game: GameState; readonly reason: GameEndReason }
+    | {
+          readonly type: "passed";
+          readonly gameId: string;
+          /** 自動パスした側。両者が続けてパスした場合は起きた順に 2 つ並ぶ */
+          readonly passedBy: readonly ("black" | "white")[];
+      }
+    | { readonly type: "game_ended"; readonly game: GameState; readonly result: GameResult }
     | { readonly type: "error"; readonly code: ErrorCode; readonly message: string };
 
 /** 盤上の座標。 */
@@ -52,10 +58,36 @@ export type GameState = {
     readonly lastMove: Square | null;
     /** 対局している 2 人。対局開始時の座席で確定する */
     readonly players: { readonly black: Participant; readonly white: Participant };
+    /** 確定した対局結果。対局中は null */
+    readonly result: GameResult | null;
+};
+
+/**
+ * 確定した対局の決着（要件定義 §6 / §7.4）。
+ * 無効試合（中断・離脱）は勝敗を付けないため outcome は null になる。
+ */
+export type GameResult = {
+    readonly reason: GameEndReason;
+    readonly outcome: Outcome | null;
 };
 
 /** 対局の終了理由。 */
-export type GameEndReason = "both_passed" | "board_full" | "resign" | "abort";
+export type GameEndReason =
+    /** 両者が続けてパスした */
+    | "both_passed"
+    /** 盤面が石で埋まった */
+    | "board_full"
+    /** 一方の石が 0 枚になった */
+    | "shutout"
+    /** 一方が投了した */
+    | "resign"
+    /** 一方が中断した（無効試合） */
+    | "abort"
+    /** 対局中に一方がサーバーを離脱した（無効試合。要件定義 §14 E-09） */
+    | "disconnect";
+
+/** 対局の勝敗。 */
+export type Outcome = "black_win" | "white_win" | "draw";
 
 /** サーバーがクライアントへ通知するエラー種別。 */
 export type ErrorCode =

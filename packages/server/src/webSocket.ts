@@ -4,7 +4,13 @@ import type { Duplex } from "node:stream";
 import type { ClientMessage, Participant, ServerMessage, Square } from "@othello/protocol";
 import { WebSocket, WebSocketServer } from "ws";
 
-import { GameStore, toGameView, type GameSession, type SessionResult } from "./gameSession.ts";
+import {
+    GameStore,
+    toGameView,
+    type GameSession,
+    type MoveResult,
+    type SessionResult,
+} from "./gameSession.ts";
 import {
     LobbyStore,
     toRoomState,
@@ -134,10 +140,36 @@ export class WebSocketHub {
      * @param connection 認証済みコンテキスト
      * @param gameId クライアントから提示された対局ID
      * @param square 着手する座標表記
-     * @returns 適用後のセッション、または拒否理由
+     * @returns 適用後のセッションと自動パスした側、または拒否理由
      */
-    playMove(connection: WebSocketConnection, gameId: string, square: Square): SessionResult {
+    playMove(connection: WebSocketConnection, gameId: string, square: Square): MoveResult {
         return this.#games.play(connection.instanceId, gameId, connection.userId, square);
+    }
+
+    /** 投了を受理する（要件定義 F-11）。
+     * @param connection 認証済みコンテキスト
+     * @param gameId クライアントから提示された対局ID
+     * @returns 投了で決着したセッション、または拒否理由
+     */
+    resignGame(connection: WebSocketConnection, gameId: string): SessionResult {
+        return this.#games.resign(connection.instanceId, gameId, connection.userId);
+    }
+
+    /** 中断を受理し、対局を破棄する（要件定義 F-12）。
+     * @param connection 認証済みコンテキスト
+     * @param gameId クライアントから提示された対局ID
+     * @returns 中断で終了したセッション、または拒否理由
+     */
+    abortGame(connection: WebSocketConnection, gameId: string): SessionResult {
+        return this.#games.abort(connection.instanceId, gameId, connection.userId);
+    }
+
+    /** 対局中の離脱を無効試合として終え、対局を破棄する（要件定義 §14 E-09）。
+     * @param connection 認証済みコンテキスト
+     * @returns 無効試合として終了したセッション。終了させる対局がなければ null
+     */
+    abandonGame(connection: WebSocketConnection): GameSession | null {
+        return this.#games.abandon(connection.instanceId, connection.userId);
     }
 
     /** 指定インスタンスのロビー状態を返す。
@@ -286,19 +318,22 @@ export function attachWebSocketServer(
                     handleMove(hub, socket, connection, message, log);
                     return;
                 }
-                // 投了・中断の実行は後続 Issue に委ねる。ここでは必ず認証済み接続に紐づくため、
-                // ユーザー ID やインスタンス ID を本文から偽装できない。
-                socket.emit("authorizedMessage", message, connection);
+                handleGameEnd(hub, socket, connection, message, log);
             });
 
             socket.on("close", () => {
                 hub.remove(socket, connection);
                 // 同じユーザーの別接続が残っていれば、まだロビーから外さない。
-                if (
-                    !hub.hasConnection(connection.instanceId, connection.userId) &&
-                    hub.leaveLobby(connection)
-                ) {
-                    hub.broadcastState(connection.instanceId);
+                if (!hub.hasConnection(connection.instanceId, connection.userId)) {
+                    // E-09: 対局中の離脱は無効試合として終える
+                    const abandoned = hub.abandonGame(connection);
+                    if (abandoned !== null) {
+                        broadcastGameEnd(hub, connection.instanceId, abandoned, log);
+                    }
+                    // 破棄した対局はルーム状態からも消えるため、併せて配り直す
+                    if (hub.leaveLobby(connection) || abandoned !== null) {
+                        hub.broadcastState(connection.instanceId);
+                    }
                 }
                 log.log(
                     `WebSocket 切断: userId=${connection.userId} instanceId=${connection.instanceId}`,
@@ -379,6 +414,67 @@ function handleMove(
     }
     log.log(`着手: userId=${connection.userId} square=${message.square} gameId=${message.gameId}`);
     hub.broadcastState(connection.instanceId);
+
+    // F-10: 終局した場合は勝敗を確定して配信する。
+    // 終局に伴うパスは終局理由（連続パス・完封）が伝えるため、パスの通知は行わない
+    if (result.session.result !== null) {
+        broadcastGameEnd(hub, connection.instanceId, result.session, log);
+        return;
+    }
+    // F-09: 合法手が無い側は自動でパスする。盤面に続けてその旨を全員へ知らせる
+    if (result.passedBy.length > 0) {
+        log.log(`自動パス: gameId=${message.gameId} passedBy=${result.passedBy.join(",")}`);
+        hub.broadcast(connection.instanceId, {
+            type: "passed",
+            gameId: message.gameId,
+            passedBy: result.passedBy,
+        });
+    }
+}
+
+// 投了・中断を受理し、確定した結果を全員へ配信する（要件定義 F-11・F-12）
+function handleGameEnd(
+    hub: WebSocketHub,
+    socket: WebSocket,
+    connection: WebSocketConnection,
+    message: Extract<ClientMessage, { type: "resign" | "abort" }>,
+    log: Pick<Console, "log" | "error">,
+): void {
+    const isResign = message.type === "resign";
+    const result = isResign
+        ? hub.resignGame(connection, message.gameId)
+        : hub.abortGame(connection, message.gameId);
+    if (!result.ok) {
+        log.log(
+            `${isResign ? "投了" : "中断"}を拒否: userId=${connection.userId} ` +
+                `gameId=${message.gameId} code=${result.code}`,
+        );
+        sendError(socket, result.code, result.message);
+        return;
+    }
+
+    broadcastGameEnd(hub, connection.instanceId, result.session, log);
+    // 中断した対局は破棄されるため、ロビーだけに戻ったルーム状態を配り直す（要件定義 §6）
+    if (!isResign) hub.broadcastState(connection.instanceId);
+}
+
+// 確定した対局結果を全員へ配信し、ログへ残す（要件定義 §12 ログ / F-10）
+function broadcastGameEnd(
+    hub: WebSocketHub,
+    instanceId: string,
+    session: GameSession,
+    log: Pick<Console, "log" | "error">,
+): void {
+    const result = session.result;
+    if (result === null) return;
+
+    const game = toGameView(session);
+    hub.broadcast(instanceId, { type: "game_ended", game, result });
+    log.log(
+        `対局終了: gameId=${session.id} instanceId=${instanceId} reason=${result.reason} ` +
+            `outcome=${result.outcome ?? "無効試合"} ` +
+            `black=${game.scores.black} white=${game.scores.white}`,
+    );
 }
 
 // 認証コンテキストから、ロビーが保持する参加者情報を作る

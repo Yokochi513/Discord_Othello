@@ -1,9 +1,13 @@
 /**
- * Activity インスタンス単位の対局セッション（要件定義 §5.4 / F-05〜F-07 / §14 E-01〜E-05）。
+ * Activity インスタンス単位の対局セッション
+ * （要件定義 §5.4 / F-05〜F-07・F-09〜F-12 / §14 E-01〜E-05・E-09）。
  *
  * 合法手判定・反転・手番遷移・終局判定は `@othello/core` を唯一の正として用いる。
  * クライアントから届くのは座標だけで、着手する色は座席と接続情報から決めるため、
  * 改変クライアントが手番や色を偽ることはできない（要件定義 §15）。
+ *
+ * 自動パス・終局・投了・中断のいずれで対局が終わったかは`result`に確定させ、
+ * 以後の着手・投了・中断はすべて拒否する。無効試合（中断・離脱）は勝敗を付けない。
  *
  * ロビーと同じく状態遷移は副作用のない関数として実装し、配信は WebSocket 側に任せる。
  * 対局は Activity インスタンスごとに 1 局で、`GameStore` がインスタンス単位に保持する
@@ -15,14 +19,25 @@ import { randomUUID } from "node:crypto";
 import {
     countCells,
     createGameState,
+    finishGame,
     IllegalMoveError,
     InvalidSquareError,
     playMove,
+    resignGame,
+    type GameEndReason as CoreEndReason,
     type GameState as CoreGameState,
+    type Outcome as CoreOutcome,
     type Player,
     type Square,
 } from "@othello/core";
-import type { ErrorCode, GameState as GameView, Participant } from "@othello/protocol";
+import type {
+    ErrorCode,
+    GameEndReason,
+    GameResult,
+    GameState as GameView,
+    Outcome,
+    Participant,
+} from "@othello/protocol";
 
 import type { LobbyState } from "./lobby.ts";
 
@@ -36,12 +51,38 @@ export type GameSession = {
     readonly state: CoreGameState;
     /** 直前に打たれた手。まだ着手がなければ null */
     readonly lastMove: Square | null;
+    /** 確定した対局結果。対局中は null（要件定義 §6） */
+    readonly result: GameResult | null;
 };
 
 /** 対局操作の結果。拒否した場合は盤面を変えず、クライアントへ返すエラーを持つ。 */
 export type SessionResult =
     | { readonly ok: true; readonly session: GameSession }
     | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
+/** 着手の結果。受理した場合は、その着手で起きた自動パスを併せて返す（F-09）。 */
+export type MoveResult =
+    | {
+          readonly ok: true;
+          readonly session: GameSession;
+          /** この着手の後に自動パスした側。パスが起きなければ空配列 */
+          readonly passedBy: readonly Player[];
+      }
+    | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
+// core の終局理由・勝敗を、クライアントへ配信する表記へ対応付ける
+const END_REASONS: Readonly<Record<CoreEndReason, GameEndReason>> = {
+    bothPassed: "both_passed",
+    boardFull: "board_full",
+    shutout: "shutout",
+    resign: "resign",
+};
+
+const OUTCOMES: Readonly<Record<CoreOutcome, Outcome>> = {
+    blackWin: "black_win",
+    whiteWin: "white_win",
+    draw: "draw",
+};
 
 /**
  * 対局セッションを生成する。初期盤面・黒番から始まる（要件定義 §6）。
@@ -50,7 +91,7 @@ export type SessionResult =
  * @returns 初期局面の対局セッション
  */
 export function createSession(id: string, players: GamePlayers): GameSession {
-    return { id, players, state: createGameState(), lastMove: null };
+    return { id, players, state: createGameState(), lastMove: null, result: null };
 }
 
 /**
@@ -66,20 +107,17 @@ export function seatOf(session: GameSession, userId: string): Player | null {
 }
 
 /**
- * 着手を検証して適用する（要件定義 F-07 / §14 E-01〜E-04）。
+ * 着手を検証して適用する（要件定義 F-07・F-09・F-10 / §14 E-01〜E-04）。
  * 終局済み・観戦者・手番違い・非合法手はいずれも拒否し、盤面を変えない。
+ * 受理した場合は、着手に続いて起きた自動パスと、成立した終局を併せて確定する。
  * @param session 対局セッション
  * @param userId 着手しようとしたユーザーの Discord User ID
  * @param square 着手する座標表記
- * @returns 適用後のセッション、または拒否理由
+ * @returns 適用後のセッションと自動パスした側、または拒否理由
  */
-export function playSessionMove(
-    session: GameSession,
-    userId: string,
-    square: Square,
-): SessionResult {
+export function playSessionMove(session: GameSession, userId: string, square: Square): MoveResult {
     // E-04: 既に終局した対局への着手
-    if (session.state.turn === null) {
+    if (isFinished(session)) {
         return { ok: false, code: "invalid_state", message: "対局は既に終了しています" };
     }
 
@@ -95,8 +133,10 @@ export function playSessionMove(
     }
 
     try {
+        // core が着手の適用・自動パス・終局判定をまとめて行う（要件定義 §5.4）
         const state = playMove(session.state, player, square);
-        return { ok: true, session: { ...session, state, lastMove: square } };
+        const played = { ...session, state, lastMove: square, result: naturalResult(state) };
+        return { ok: true, session: played, passedBy: passedBetween(session.state, state) };
     } catch (error) {
         // E-02: 非合法手。core の判定を唯一の正とする（要件定義 §5.4）
         if (error instanceof IllegalMoveError || error instanceof InvalidSquareError) {
@@ -104,6 +144,47 @@ export function playSessionMove(
         }
         throw error;
     }
+}
+
+/**
+ * 投了を受理する（要件定義 F-11 / §6）。投了した側の負けとし、石数は投了時点の値を残す。
+ * @param session 対局セッション
+ * @param userId 投了しようとしたユーザーの Discord User ID
+ * @returns 投了で決着したセッション、または拒否理由
+ */
+export function resignSession(session: GameSession, userId: string): SessionResult {
+    const requester = endRequester(session, userId, "投了");
+    if (!requester.ok) return requester;
+
+    const resigned = resignGame(session.state.board, requester.player);
+    const result: GameResult = { reason: "resign", outcome: OUTCOMES[resigned.outcome] };
+    return { ok: true, session: { ...session, result } };
+}
+
+/**
+ * 中断を受理する（要件定義 F-12 / §6）。無効試合として扱い、勝敗を付けない。
+ * @param session 対局セッション
+ * @param userId 中断しようとしたユーザーの Discord User ID
+ * @returns 中断で終了したセッション、または拒否理由
+ */
+export function abortSession(session: GameSession, userId: string): SessionResult {
+    const requester = endRequester(session, userId, "中断");
+    if (!requester.ok) return requester;
+
+    return { ok: true, session: { ...session, result: { reason: "abort", outcome: null } } };
+}
+
+/**
+ * 対局中の離脱による無効試合を確定する（要件定義 §14 E-09）。
+ * 中断と同じく勝敗は付けない。対局していないユーザーの離脱では何も起きない。
+ * @param session 対局セッション
+ * @param userId 離脱したユーザーの Discord User ID
+ * @returns 無効試合として終了したセッション。終了させる必要がなければ null
+ */
+export function abandonSession(session: GameSession, userId: string): GameSession | null {
+    if (isFinished(session) || seatOf(session, userId) === null) return null;
+
+    return { ...session, result: { reason: "disconnect", outcome: null } };
 }
 
 /**
@@ -117,21 +198,23 @@ export function toGameView(session: GameSession): GameView {
     return {
         id: session.id,
         board: session.state.board,
-        turn: session.state.turn,
+        // 投了・中断では core の手番が残るため、決着した対局の手番は必ず null にする
+        turn: session.result === null ? session.state.turn : null,
         scores: { black: count.black, white: count.white },
         moveCount: session.state.moveCount,
         lastMove: session.lastMove,
         players: session.players,
+        result: session.result,
     };
 }
 
 /**
- * 対局が終了しているかを返す。
+ * 対局が終了しているかを返す。終局・投了・中断・離脱のいずれも終了として扱う。
  * @param session 対局セッション
- * @returns 終局していれば true
+ * @returns 終了していれば true
  */
 export function isFinished(session: GameSession): boolean {
-    return session.state.turn === null;
+    return session.result !== null;
 }
 
 /**
@@ -203,12 +286,12 @@ export class GameStore {
      * @param gameId クライアントから提示された対局ID
      * @param userId 着手しようとしたユーザーの Discord User ID
      * @param square 着手する座標表記
-     * @returns 適用後のセッション、または拒否理由
+     * @returns 適用後のセッションと自動パスした側、または拒否理由
      */
-    play(instanceId: string, gameId: string, userId: string, square: Square): SessionResult {
-        const session = this.get(instanceId);
+    play(instanceId: string, gameId: string, userId: string, square: Square): MoveResult {
+        const session = this.#current(instanceId, gameId);
         // E-05: 存在しない対局IDの指定
-        if (session === null || session.id !== gameId) {
+        if (session === null) {
             return { ok: false, code: "game_not_found", message: "対局が見つかりません" };
         }
 
@@ -217,10 +300,101 @@ export class GameStore {
         return result;
     }
 
+    /** 投了を受理し、投了した側の負けとして対局を終える（要件定義 F-11）。
+     * @param instanceId Activity インスタンスID
+     * @param gameId クライアントから提示された対局ID
+     * @param userId 投了しようとしたユーザーの Discord User ID
+     * @returns 投了で決着したセッション、または拒否理由
+     */
+    resign(instanceId: string, gameId: string, userId: string): SessionResult {
+        const session = this.#current(instanceId, gameId);
+        if (session === null) {
+            return { ok: false, code: "game_not_found", message: "対局が見つかりません" };
+        }
+
+        const result = resignSession(session, userId);
+        if (result.ok) this.#games.set(instanceId, result.session);
+        return result;
+    }
+
+    /** 中断を受理し、無効試合として対局を破棄する（要件定義 F-12）。
+     * 破棄した対局は保持しないため、ルーム状態はロビーだけに戻る。
+     * @param instanceId Activity インスタンスID
+     * @param gameId クライアントから提示された対局ID
+     * @param userId 中断しようとしたユーザーの Discord User ID
+     * @returns 中断で終了したセッション、または拒否理由
+     */
+    abort(instanceId: string, gameId: string, userId: string): SessionResult {
+        const session = this.#current(instanceId, gameId);
+        if (session === null) {
+            return { ok: false, code: "game_not_found", message: "対局が見つかりません" };
+        }
+
+        const result = abortSession(session, userId);
+        if (result.ok) this.#games.delete(instanceId);
+        return result;
+    }
+
+    /** 対局中の離脱を無効試合として終え、対局を破棄する（要件定義 §14 E-09）。
+     * @param instanceId Activity インスタンスID
+     * @param userId 離脱したユーザーの Discord User ID
+     * @returns 無効試合として終了したセッション。終了させる対局がなければ null
+     */
+    abandon(instanceId: string, userId: string): GameSession | null {
+        const session = this.get(instanceId);
+        if (session === null) return null;
+
+        const abandoned = abandonSession(session, userId);
+        if (abandoned !== null) this.#games.delete(instanceId);
+        return abandoned;
+    }
+
     /** 指定インスタンスの対局を破棄する。
      * @param instanceId Activity インスタンスID
      */
     delete(instanceId: string): void {
         this.#games.delete(instanceId);
     }
+
+    // クライアントの提示した対局IDが現在の対局と一致する場合だけ、その対局を返す
+    #current(instanceId: string, gameId: string): GameSession | null {
+        const session = this.get(instanceId);
+        return session !== null && session.id === gameId ? session : null;
+    }
+}
+
+// 対局を終わらせる操作の要求者を検証する。終局済みと観戦者はいずれも拒否する
+function endRequester(session: GameSession, userId: string, label: string): RequesterResult {
+    if (isFinished(session)) {
+        return { ok: false, code: "invalid_state", message: "対局は既に終了しています" };
+    }
+
+    const player = seatOf(session, userId);
+    if (player === null) {
+        return { ok: false, code: "unauthorized", message: `観戦者は${label}できません` };
+    }
+
+    return { ok: true, player };
+}
+
+// 投了・中断を要求した対局者の検証結果
+type RequesterResult =
+    | { readonly ok: true; readonly player: Player }
+    | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
+// 着手の前後で棋譜に加わったパスを、起きた順に取り出す
+function passedBetween(before: CoreGameState, after: CoreGameState): readonly Player[] {
+    return after.log
+        .slice(before.log.length)
+        .flatMap((entry) => (entry.kind === "pass" ? [entry.player] : []));
+}
+
+// 盤面から確定した自然終局の結果を求める。対局が続いていれば null
+function naturalResult(state: CoreGameState): GameResult | null {
+    if (state.turn !== null) return null;
+
+    const finished = finishGame(state.board);
+    if (finished === null) return null;
+
+    return { reason: END_REASONS[finished.reason], outcome: OUTCOMES[finished.outcome] };
 }
