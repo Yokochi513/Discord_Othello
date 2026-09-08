@@ -126,3 +126,142 @@ body {
     color: #80848e;
     cursor: not-allowed;
 }
+
+/* ロビー画面（要件定義 §7.2） */
+
+.lobby__seats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.lobby__seat {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid #3f4147;
+    border-radius: 0.5rem;
+    background-color: #2b2d31;
+}
+
+.lobby__mark {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.lobby__label {
+    flex: none;
+    width: 3rem;
+    color: #b5bac1;
+    font-size: 0.875rem;
+}
+
+.lobby__occupant {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.lobby__vacant {
+    color: #80848e;
+}
+
+.lobby__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lobby__you {
+    margin-left: 0.25rem;
+    color: #80848e;
+    font-size: 0.75rem;
+}
+
+/* 着席・退席ボタンは右端へ寄せる */
+.lobby__seatAction {
+    margin-left: auto;
+    flex: none;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid #4e5058;
+    border-radius: 0.375rem;
+    background-color: #313338;
+    color: #dbdee1;
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.lobby__seatAction:disabled {
+    color: #80848e;
+    cursor: not-allowed;
+}
+
+.lobby__avatar {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background-color: #1e1f22;
+    object-fit: cover;
+}
+
+.lobby__avatar--small {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* 画像を読み込めない場合の代替表示 */
+.lobby__avatar--fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #b5bac1;
+    font-size: 0.875rem;
+}
+
+.lobby__spectators {
+    width: 100%;
+}
+
+.lobby__subheading {
+    margin: 0 0 0.25rem;
+    color: #b5bac1;
+    font-size: 0.875rem;
+    font-weight: normal;
+}
+
+.lobby__empty {
+    margin: 0;
+    color: #80848e;
+    font-size: 0.875rem;
+}
+
+.lobby__spectatorList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.875rem;
+}
+
+.lobby__spectator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.lobby__hint {
+    margin: 0;
+    color: #80848e;
+    font-size: 0.75rem;
+    text-align: center;
+}

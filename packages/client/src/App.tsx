@@ -3,25 +3,28 @@
  *
  * Discord SDK の初期化後にサーバーへ WebSocket 接続し、サーバーから届く状態通知だけで
  * ロビー・対局・終局を切り替える（要件定義 §5.4 / §7.1）。
- * 各画面の作り込み（座席の並び・盤面描画・再戦）は M3-6〜M3-8 で行うため、
+ * ロビー画面は Lobby.tsx が受け持つ。対局・終局の作り込みは M3-7〜M3-8 で行うため、
  * ここでは状態が正しく遷移していることを確かめられる最小限の表示に留める。
  */
 
-import type { GameEndReason, GameState, Outcome, Participant } from "@othello/protocol";
+import type { IDiscordSDK } from "@discord/embedded-app-sdk";
+import type { GameEndReason, GameState, Outcome } from "@othello/protocol";
 import { useEffect, useState } from "react";
 
 import { initDiscordSession, type DiscordSession } from "./discordSdk.ts";
 import { loadClientConfig, type ClientConfig } from "./env.ts";
 import { toErrorMessage } from "./errorMessage.ts";
+import { Lobby } from "./Lobby.tsx";
+import type { AvatarMap } from "./participants.ts";
 import {
     selectGame,
     selectIsPlayer,
     selectPhase,
-    selectSeat,
     type ClientState,
     type SeatId,
 } from "./roomState.ts";
 import { useGameSession, type GameActions } from "./useGameSession.ts";
+import { useParticipantAvatars } from "./useParticipants.ts";
 
 // 初期化の進行状態
 type InitState =
@@ -106,6 +109,7 @@ function Content({ state }: { readonly state: InitState }): React.JSX.Element {
     return (
         <Room
             config={state.config}
+            sdk={state.session.sdk}
             accessToken={state.session.accessToken}
             instanceId={state.session.instanceId}
         />
@@ -115,20 +119,24 @@ function Content({ state }: { readonly state: InitState }): React.JSX.Element {
 // サーバーへ接続し、届いた状態に従って画面を切り替える
 function Room({
     config,
+    sdk,
     accessToken,
     instanceId,
 }: {
     readonly config: ClientConfig;
+    readonly sdk: IDiscordSDK;
     readonly accessToken: string;
     readonly instanceId: string;
 }): React.JSX.Element {
     const { state, actions } = useGameSession(config, { accessToken, instanceId });
+    // 表示名はサーバーから届くが、アバターは Discord SDK から解決する（要件定義 §11.5）
+    const avatars = useParticipantAvatars(sdk);
 
     return (
         <>
             <ConnectionNotice state={state} />
             <ErrorNotice state={state} actions={actions} />
-            <Screen state={state} actions={actions} />
+            <Screen state={state} actions={actions} avatars={avatars} />
         </>
     );
 }
@@ -137,15 +145,17 @@ function Room({
 function Screen({
     state,
     actions,
+    avatars,
 }: {
     readonly state: ClientState;
     readonly actions: GameActions;
+    readonly avatars: AvatarMap;
 }): React.JSX.Element {
     switch (selectPhase(state)) {
         case "connecting":
             return <p className="app__status">サーバーに接続しています…</p>;
         case "lobby":
-            return <Lobby state={state} actions={actions} />;
+            return <Lobby state={state} actions={actions} avatars={avatars} />;
         case "playing":
             return <Game state={state} actions={actions} />;
         case "finished":
@@ -183,61 +193,6 @@ function ErrorNotice({
                 閉じる
             </button>
         </p>
-    );
-}
-
-// ロビー画面。座席の中身と操作だけを出す（画面の作り込みは M3-6）
-function Lobby({
-    state,
-    actions,
-}: {
-    readonly state: ClientState;
-    readonly actions: GameActions;
-}): React.JSX.Element {
-    const room = state.room;
-    if (room === null) return <p className="app__status">サーバーに接続しています…</p>;
-
-    const mySeat = selectSeat(state);
-    const bothSeated = room.seats.black !== null && room.seats.white !== null;
-
-    return (
-        <section className="app__screen">
-            <h2 className="app__heading">ロビー</h2>
-            <dl className="app__detail">
-                <dt>黒</dt>
-                <dd>{seatLabel(room.seats.black)}</dd>
-                <dt>白</dt>
-                <dd>{seatLabel(room.seats.white)}</dd>
-                <dt>観戦者</dt>
-                <dd>{room.spectators.length === 0 ? "なし" : nameList(room.spectators)}</dd>
-            </dl>
-            <div className="app__actions">
-                <button
-                    type="button"
-                    disabled={room.seats.black !== null || mySeat !== null}
-                    onClick={() => actions.takeSeat("black")}
-                >
-                    黒に着席
-                </button>
-                <button
-                    type="button"
-                    disabled={room.seats.white !== null || mySeat !== null}
-                    onClick={() => actions.takeSeat("white")}
-                >
-                    白に着席
-                </button>
-                <button type="button" disabled={mySeat === null} onClick={actions.leaveSeat}>
-                    退席
-                </button>
-                <button
-                    type="button"
-                    disabled={!bothSeated || mySeat === null}
-                    onClick={actions.startGame}
-                >
-                    対局開始
-                </button>
-            </div>
-        </section>
     );
 }
 
@@ -324,12 +279,4 @@ function GameDetail({ game }: { readonly game: GameState }): React.JSX.Element {
             <dd>{game.lastMove ?? "なし"}</dd>
         </dl>
     );
-}
-
-function seatLabel(participant: Participant | null): string {
-    return participant === null ? "空席" : participant.displayName;
-}
-
-function nameList(participants: readonly Participant[]): string {
-    return participants.map((participant) => participant.displayName).join("、");
 }
