@@ -8,7 +8,7 @@
  * `coord.ts`に依存する。
  */
 
-import { BOARD_SIZE, isOnBoard } from "./coord";
+import { BOARD_SIZE, isOnBoard } from "./coord.js";
 import type { Cell, Coord, Player } from "./type.ts";
 
 /**
