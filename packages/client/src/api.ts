@@ -11,6 +11,9 @@ import type { ClientConfig } from "./env.ts";
 /** Discord のプロキシを示すパス接頭辞（要件定義 §13） */
 const PROXY_PREFIX = "/.proxy";
 
+/** サーバーが Upgrade を受け付けるパス（packages/server の attachWebSocketServer と対応） */
+const WS_PATH = "/ws";
+
 /**
  * API の論理パスを、実行環境に応じた実際のリクエストパスへ変換する。
  * iframe 内では Discord のプロキシを経由させるため接頭辞を付ける。
@@ -24,6 +27,28 @@ export function resolveApiPath(path: string, embedded: boolean): string {
     if (!embedded) return normalized;
     if (normalized === PROXY_PREFIX || normalized.startsWith(`${PROXY_PREFIX}/`)) return normalized;
     return `${PROXY_PREFIX}${normalized}`;
+}
+
+/**
+ * WebSocket の接続先 URL を組み立てる（要件定義 §13）。
+ * WebSocket の接続には絶対 URL が要るため、現在のオリジンを ws / wss に読み替えたうえで
+ * API と同じ経路解決を適用する。認証情報はクエリでサーバーへ渡す。
+ * @param origin location.origin 相当の文字列
+ * @param config クライアントの実行時設定
+ * @param params 接続時に渡すクエリパラメータ
+ * @returns WebSocket の接続先 URL
+ */
+export function resolveWebSocketUrl(
+    origin: string,
+    config: ClientConfig,
+    params: Readonly<Record<string, string>>,
+): string {
+    const url = new URL(resolveApiPath(WS_PATH, config.embedded), origin);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
+    }
+    return url.toString();
 }
 
 /**

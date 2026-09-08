@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchApiJson, postApiJson, resolveApiPath } from "./api.ts";
+import { fetchApiJson, postApiJson, resolveApiPath, resolveWebSocketUrl } from "./api.ts";
 import type { ClientConfig } from "./env.ts";
 
 const config: ClientConfig = { discordClientId: "test-client-id", embedded: false };
@@ -29,6 +29,31 @@ describe("resolveApiPath", () => {
 
     it("接頭辞と紛らわしいパスには接頭辞を付ける", () => {
         expect(resolveApiPath("/.proxyfoo/api", true)).toBe("/.proxy/.proxyfoo/api");
+    });
+});
+
+describe("resolveWebSocketUrl", () => {
+    const embedded: ClientConfig = { discordClientId: "test-client-id", embedded: true };
+
+    it("iframe 内では wss とプロキシ接頭辞で組み立てる", () => {
+        expect(
+            resolveWebSocketUrl("https://1234.discordsays.com", embedded, {
+                access_token: "token",
+                instance_id: "instance",
+            }),
+        ).toBe("wss://1234.discordsays.com/.proxy/ws?access_token=token&instance_id=instance");
+    });
+
+    it("iframe 外では接頭辞を付けず、オリジンの方式に合わせる", () => {
+        expect(resolveWebSocketUrl("http://localhost:5173", config, {})).toBe(
+            "ws://localhost:5173/ws",
+        );
+    });
+
+    it("クエリ値はエスケープする", () => {
+        expect(resolveWebSocketUrl("https://example.com", config, { access_token: "a b&c" })).toBe(
+            "wss://example.com/ws?access_token=a+b%26c",
+        );
     });
 });
 

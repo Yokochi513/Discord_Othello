@@ -18,6 +18,11 @@ export type DiscordSession = {
     readonly instanceId: string;
     /** Discord Activity の iframe 内で動作しているか */
     readonly embedded: boolean;
+    /**
+     * OAuth2 で得たアクセストークン。WebSocket 接続時の本人確認に使う（要件定義 §15）。
+     * iframe 外（モック）では認証を行わないため null になる
+     */
+    readonly accessToken: string | null;
 };
 
 /**
@@ -37,14 +42,13 @@ export async function initDiscordSession(config: ClientConfig): Promise<DiscordS
     const sdk = createSdk(config);
     await withTimeout(sdk.ready(), READY_TIMEOUT_MS);
 
-    if (config.embedded) {
-        await authenticate(sdk, config);
-    }
+    const accessToken = config.embedded ? await authenticate(sdk, config) : null;
 
     return {
         sdk,
         instanceId: sdk.instanceId,
         embedded: config.embedded,
+        accessToken,
     };
 }
 
@@ -54,8 +58,9 @@ type TokenResponse = {
 };
 
 // authorize() で認可コードを取得し、サーバーでアクセストークンに交換した上で
-// SDK を認証する（本人確認そのものは Discord 側が行う。要件定義 §11.5）
-async function authenticate(sdk: IDiscordSDK, config: ClientConfig): Promise<void> {
+// SDK を認証する（本人確認そのものは Discord 側が行う。要件定義 §11.5）。
+// 得たトークンは WebSocket の接続時にも使うため呼び出し元へ返す
+async function authenticate(sdk: IDiscordSDK, config: ClientConfig): Promise<string> {
     const { code } = await sdk.commands.authorize({
         client_id: config.discordClientId,
         response_type: "code",
@@ -67,6 +72,7 @@ async function authenticate(sdk: IDiscordSDK, config: ClientConfig): Promise<voi
     });
 
     await sdk.commands.authenticate({ access_token: accessToken });
+    return accessToken;
 }
 
 // 実行環境に応じて実物とモックを選ぶ。
