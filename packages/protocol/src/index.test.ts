@@ -8,14 +8,16 @@ describe("isClientMessage", () => {
         expect(isClientMessage({ type: "move", gameId: "game-1", square: "e6" })).toBe(true);
         expect(isClientMessage({ type: "resign", gameId: "game-1" })).toBe(true);
         expect(isClientMessage({ type: "abort", gameId: "game-1" })).toBe(true);
+        expect(isClientMessage({ type: "start_game" })).toBe(true);
+        expect(isClientMessage({ type: "rematch" })).toBe(true);
     });
 
     it("不正な入力を拒否する", () => {
         expect(isClientMessage({ type: "move", gameId: "game-1", square: "z9" })).toBe(false);
         expect(isClientMessage({ type: "seat", seat: "spectator" })).toBe(false);
-        expect(
-            isClientMessage({ type: "seat", seat: "black", instanceId: "spoofed-room" }),
-        ).toBe(false);
+        expect(isClientMessage({ type: "seat", seat: "black", instanceId: "spoofed-room" })).toBe(
+            false,
+        );
         expect(isClientMessage({ type: "unknown" })).toBe(false);
     });
 });

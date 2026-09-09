@@ -60,6 +60,11 @@ export type SessionResult =
     | { readonly ok: true; readonly session: GameSession }
     | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
 
+/** 対局を開始できるかの検査結果。開始できる場合は黒白の顔ぶれを併せて返す。 */
+export type StartCheck =
+    | { readonly ok: true; readonly players: GamePlayers }
+    | { readonly ok: false; readonly code: ErrorCode; readonly message: string };
+
 /** 着手の結果。受理した場合は、その着手で起きた自動パスを併せて返す（F-09）。 */
 export type MoveResult =
     | {
@@ -218,6 +223,39 @@ export function isFinished(session: GameSession): boolean {
 }
 
 /**
+ * 対局を開始できるかを検査する（要件定義 F-05・F-19）。
+ * 進行中の対局がある間、両席が埋まっていない間、対局者以外からの要求はいずれも開始できない。
+ * 終局済みの対局は次の対局を妨げないため、再戦もこの検査だけで判断できる。
+ * @param current 現在保持している対局。まだ対局していなければ null
+ * @param lobby 現在のロビー状態
+ * @param requesterId 開始を要求したユーザーの Discord User ID
+ * @returns 開始できる場合は黒白の顔ぶれ、できない場合は拒否理由
+ */
+export function checkStartable(
+    current: GameSession | null,
+    lobby: LobbyState,
+    requesterId: string,
+): StartCheck {
+    if (current !== null && !isFinished(current)) {
+        return { ok: false, code: "invalid_state", message: "対局が既に進行中です" };
+    }
+
+    const { black, white } = lobby.seats;
+    if (black === null || white === null) {
+        return {
+            ok: false,
+            code: "invalid_state",
+            message: "両席が埋まるまで対局を開始できません",
+        };
+    }
+    if (black.userId !== requesterId && white.userId !== requesterId) {
+        return { ok: false, code: "unauthorized", message: "対局者だけが開始できます" };
+    }
+
+    return { ok: true, players: { black, white } };
+}
+
+/**
  * Activity インスタンスごとの対局セッションを保持する。
  * 対局IDはインスタンスをまたいで一意になるよう採番し、他インスタンスの対局IDを
  * 指定した操作は成立しない（要件定義 §15）。
@@ -251,32 +289,19 @@ export class GameStore {
         return this.get(instanceId)?.id === gameId;
     }
 
-    /** 両席が埋まったロビーから対局を生成する（要件定義 F-05）。
+    /** 両席が埋まったロビーから対局を生成する（要件定義 F-05・F-19）。
      * 開始を要求できるのは着席している側に限り、進行中の対局があるときは拒否する。
+     * 終局済みの対局は上書きするため、再戦もこの操作で始められる。
      * @param instanceId Activity インスタンスID
      * @param lobby 現在のロビー状態
      * @param requesterId 開始を要求したユーザーの Discord User ID
      * @returns 生成した対局セッション、または拒否理由
      */
     start(instanceId: string, lobby: LobbyState, requesterId: string): SessionResult {
-        const current = this.get(instanceId);
-        if (current !== null && !isFinished(current)) {
-            return { ok: false, code: "invalid_state", message: "対局が既に進行中です" };
-        }
+        const check = checkStartable(this.get(instanceId), lobby, requesterId);
+        if (!check.ok) return check;
 
-        const { black, white } = lobby.seats;
-        if (black === null || white === null) {
-            return {
-                ok: false,
-                code: "invalid_state",
-                message: "両席が埋まるまで対局を開始できません",
-            };
-        }
-        if (black.userId !== requesterId && white.userId !== requesterId) {
-            return { ok: false, code: "unauthorized", message: "対局者だけが開始できます" };
-        }
-
-        const session = createSession(this.#createId(), { black, white });
+        const session = createSession(this.#createId(), check.players);
         this.#games.set(instanceId, session);
         return { ok: true, session };
     }

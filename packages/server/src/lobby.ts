@@ -103,6 +103,18 @@ export function leaveSeat(state: LobbyState, userId: string): LobbyState {
 }
 
 /**
+ * 黒席と白席の着席者を入れ替える（要件定義 F-19 / §20 O-10）。
+ * 再戦のたびに先手を交代させるために使う。両席が空なら何も変わらない。
+ * @param state 現在のロビー状態
+ * @returns 黒白を入れ替えたロビー状態。入れ替える相手がいなければ引数の状態
+ */
+export function swapSeats(state: LobbyState): LobbyState {
+    const { black, white } = state.seats;
+    if (black === null && white === null) return state;
+    return { ...state, seats: { black: white, white: black } };
+}
+
+/**
  * 参加者をロビーから取り除く（切断時）。座席・観戦者一覧の双方から外す。
  * @param state 現在のロビー状態
  * @param userId 離脱する参加者の Discord User ID
@@ -181,6 +193,14 @@ export class LobbyStore {
      */
     leaveSeat(instanceId: string, userId: string): LobbyChange {
         return this.#store(instanceId, leaveSeat(this.get(instanceId), userId));
+    }
+
+    /** 黒席と白席の着席者を入れ替える（再戦時。要件定義 F-19 / §20 O-10）。
+     * @param instanceId Activity インスタンスID
+     * @returns 更新後の状態と変化の有無
+     */
+    swapSeats(instanceId: string): LobbyChange {
+        return this.#store(instanceId, swapSeats(this.get(instanceId)));
     }
 
     /** 参加者をロビーから取り除く。誰もいなくなったロビーは破棄する。

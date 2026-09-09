@@ -3,21 +3,21 @@
  *
  * Discord SDK の初期化後にサーバーへ WebSocket 接続し、サーバーから届く状態通知だけで
  * ロビー・対局・終局を切り替える（要件定義 §5.4 / §7.1）。
- * ロビー画面は Lobby.tsx、対局画面は Game.tsx が受け持つ。終局の作り込みは M3-8 で行うため、
- * ここでは状態が正しく遷移していることを確かめられる最小限の表示に留める。
+ * 各画面の中身は Lobby.tsx・Game.tsx・Finished.tsx が受け持ち、ここは
+ * 初期化・接続・画面の振り分けと、全画面に共通する通知の表示だけを行う。
  */
 
 import type { IDiscordSDK } from "@discord/embedded-app-sdk";
-import type { GameEndReason, GameState, Outcome } from "@othello/protocol";
 import { useEffect, useState } from "react";
 
 import { initDiscordSession, type DiscordSession } from "./discordSdk.ts";
 import { loadClientConfig, type ClientConfig } from "./env.ts";
 import { toErrorMessage } from "./errorMessage.ts";
+import { Finished } from "./Finished.tsx";
 import { Game } from "./Game.tsx";
 import { Lobby } from "./Lobby.tsx";
 import type { AvatarMap } from "./participants.ts";
-import { selectPhase, type ClientState, type SeatId } from "./roomState.ts";
+import { selectPhase, type ClientState } from "./roomState.ts";
 import { useGameSession, type GameActions } from "./useGameSession.ts";
 import { useParticipantAvatars } from "./useParticipants.ts";
 
@@ -26,26 +26,6 @@ type InitState =
     | { readonly status: "loading" }
     | { readonly status: "ready"; readonly session: DiscordSession; readonly config: ClientConfig }
     | { readonly status: "error"; readonly message: string };
-
-// 座席の色の表示名
-const SEAT_LABELS: Readonly<Record<SeatId, string>> = { black: "黒", white: "白" };
-
-// 終局理由の表示名（要件定義 §6 / §7.4）
-const REASON_LABELS: Readonly<Record<GameEndReason, string>> = {
-    both_passed: "両者が続けてパスしました",
-    board_full: "盤面が埋まりました",
-    shutout: "一方の石が無くなりました",
-    resign: "投了で決着しました",
-    abort: "中断されました（無効試合）",
-    disconnect: "対局者が離脱しました（無効試合）",
-};
-
-// 勝敗の表示名
-const OUTCOME_LABELS: Readonly<Record<Outcome, string>> = {
-    black_win: "黒の勝ち",
-    white_win: "白の勝ち",
-    draw: "引き分け",
-};
 
 /**
  * Activity のルートコンポーネント。
@@ -188,55 +168,5 @@ function ErrorNotice({
                 閉じる
             </button>
         </p>
-    );
-}
-
-// 終局画面。再戦は M3-8 で扱う
-function Finished({
-    state,
-    actions,
-}: {
-    readonly state: ClientState;
-    readonly actions: GameActions;
-}): React.JSX.Element | null {
-    if (state.finished === null) return null;
-    const { game, result } = state.finished;
-
-    return (
-        <section className="app__screen">
-            <h2 className="app__heading">終局</h2>
-            <p className="app__status">
-                {result.outcome === null ? "無効試合" : OUTCOME_LABELS[result.outcome]}
-            </p>
-            <p className="app__status">{REASON_LABELS[result.reason]}</p>
-            <GameDetail game={game} />
-            <div className="app__actions">
-                <button type="button" onClick={actions.returnToLobby}>
-                    ロビーへ戻る
-                </button>
-            </div>
-        </section>
-    );
-}
-
-// 対局・終局で共通の内訳表示
-function GameDetail({ game }: { readonly game: GameState }): React.JSX.Element {
-    return (
-        <dl className="app__detail">
-            <dt>黒</dt>
-            <dd>
-                {game.players.black.displayName}（{game.scores.black} 石）
-            </dd>
-            <dt>白</dt>
-            <dd>
-                {game.players.white.displayName}（{game.scores.white} 石）
-            </dd>
-            <dt>手番</dt>
-            <dd>{game.turn === null ? "なし" : SEAT_LABELS[game.turn]}</dd>
-            <dt>手数</dt>
-            <dd>{game.moveCount}</dd>
-            <dt>直前の手</dt>
-            <dd>{game.lastMove ?? "なし"}</dd>
-        </dl>
     );
 }

@@ -4,26 +4,14 @@
  * 盤面・石数・手番・直前の手はサーバーから届いた対局状態をそのまま採る（要件定義 §5.4）。
  * 例外は打てるマスの明示だけで、応答を待たずに印を出したいので @othello/core で判定する。
  * DOM にも React にも依存しない純粋な関数として実装し、画面（Game.tsx）は結果を描くだけにする。
+ * 盤面のマスは終局画面と共通のため、組み立ては boardView.ts に置く。
  */
 
-import { BOARD_SIZE, formatSquare, listLegalMoves } from "@othello/core";
+import { formatSquare, listLegalMoves } from "@othello/core";
 import type { GameState, RoomState, Square } from "@othello/protocol";
 
+import { buildCells, type CellView } from "./boardView.ts";
 import type { ClientState, SeatId } from "./roomState.ts";
-
-/** 盤上のマス 1 つ分の表示内容。 */
-export type CellView = {
-    /** マスの座標表記（a1〜h8） */
-    readonly square: Square;
-    /** マスに置かれている石。空マスなら "empty" */
-    readonly stone: "black" | "white" | "empty";
-    /** 打てるマスの印を出すか（手番側にのみ出す。要件定義 §7.3） */
-    readonly legal: boolean;
-    /** 直前に打たれた手か */
-    readonly last: boolean;
-    /** クリック／タップで着手できるか（観戦者・手番でない側は常に false） */
-    readonly playable: boolean;
-};
 
 /** 対局者 1 人分の表示内容。 */
 export type PlayerView = {
@@ -104,34 +92,6 @@ export function buildGameView(state: ClientState): GameView | null {
         canControl: connected && inPlay && mySeat !== null,
         passNotice: passNotice(state.passedBy),
     };
-}
-
-// 盤面を a1 から h8 まで（行昇順・列昇順）の 64 マスへ並べ直す
-function buildCells(
-    game: GameState,
-    legalSquares: ReadonlySet<Square>,
-    canPlay: boolean,
-): readonly CellView[] {
-    const cells: CellView[] = [];
-
-    for (let row = 0; row < BOARD_SIZE; row++) {
-        for (let col = 0; col < BOARD_SIZE; col++) {
-            const square = formatSquare({ row, col });
-            // 盤上の座標しか作らないため null にはならない
-            if (square === null) continue;
-
-            const legal = legalSquares.has(square);
-            cells.push({
-                square,
-                stone: game.board[row]?.[col] ?? "empty",
-                legal,
-                last: game.lastMove === square,
-                playable: canPlay && legal,
-            });
-        }
-    }
-
-    return cells;
 }
 
 // 打てるマスは手番側にだけ示す（要件定義 §7.3）。観戦者と手番でない側には出さない

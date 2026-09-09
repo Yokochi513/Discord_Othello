@@ -2,13 +2,15 @@
  * 対局画面（要件定義 §7.3 / F-06〜F-09・F-11〜F-13）。
  *
  * 何を出すか・どのマスが押せるかの判断は gameView.ts が組み立てた結果に従い、
- * ここは描画と操作の呼び出しだけを行う。表記は全文日本語・簡潔にする（要件定義 §7.5）。
+ * ここは描画と操作の呼び出しだけを行う。盤面そのものの描画は Board.tsx が受け持つ。
+ * 表記は全文日本語・簡潔にする（要件定義 §7.5）。
  * 手番の残り時間は表示しない（要件定義 §7.6 のとおり時間制限を設けない）。
  */
 
 import { useState } from "react";
 
-import { buildGameView, type CellView, type PlayerView } from "./gameView.ts";
+import { Board } from "./Board.tsx";
+import { buildGameView, type PlayerView } from "./gameView.ts";
 import type { ClientState } from "./roomState.ts";
 import type { GameActions } from "./useGameSession.ts";
 
@@ -60,11 +62,7 @@ export function Game(props: GameProps): React.JSX.Element {
                 <span className="game__moveCount">手数 {view.moveCount}</span>
             </p>
 
-            <div className="game__board">
-                {view.cells.map((cell) => (
-                    <Cell key={cell.square} cell={cell} onPlay={actions.play} />
-                ))}
-            </div>
+            <Board cells={view.cells} onPlay={actions.play} />
 
             {view.passNotice !== null && <p className="app__notice">{view.passNotice}</p>}
 
@@ -131,43 +129,5 @@ function Player({ player }: { readonly player: PlayerView }): React.JSX.Element 
             <span className="game__score">{player.score}</span>
             {player.inTurn && <span className="game__inTurn">手番</span>}
         </>
-    );
-}
-
-// 盤上のマス 1 つ。着手できないマスは無効化するので、観戦者の操作は届かない（F-13）
-function Cell({
-    cell,
-    onPlay,
-}: {
-    readonly cell: CellView;
-    readonly onPlay: GameActions["play"];
-}): React.JSX.Element {
-    const classNames = ["game__cell"];
-    if (cell.legal) classNames.push("game__cell--legal");
-    if (cell.last) classNames.push("game__cell--last");
-
-    return (
-        <button
-            type="button"
-            className={classNames.join(" ")}
-            disabled={!cell.playable}
-            aria-label={cell.square}
-            onClick={() => onPlay(cell.square)}
-        >
-            {cell.stone !== "empty" && <Disc stone={cell.stone} />}
-            {cell.legal && <span className="game__hint" aria-hidden="true" />}
-        </button>
-    );
-}
-
-// 石。表裏を重ねた 1 枚を回転させ、色が変わると反転して見えるようにする（要件定義 §7.3）
-function Disc({ stone }: { readonly stone: "black" | "white" }): React.JSX.Element {
-    return (
-        <span className="game__disc">
-            <span className={`game__discInner game__discInner--${stone}`}>
-                <span className="game__face game__face--black" />
-                <span className="game__face game__face--white" />
-            </span>
-        </span>
     );
 }
