@@ -31,18 +31,22 @@ export function Finished(props: FinishedProps): React.JSX.Element {
 
     return (
         <section className="app__screen">
-            <h2 className="app__heading">終局</h2>
+            {/* 終局であることは勝敗の行から読み取れるため、見出しは読み上げ用に留める */}
+            <h2 className="app__heading app__heading--offscreen">終局</h2>
 
-            <p
-                className={
-                    view.invalid
-                        ? "finished__outcome finished__outcome--invalid"
-                        : "finished__outcome"
-                }
-            >
-                {view.outcomeLabel}
-            </p>
-            <p className="finished__reason">{view.reasonLabel}</p>
+            <div className="finished__result">
+                <p
+                    className={
+                        view.invalid
+                            ? "finished__outcome finished__outcome--invalid"
+                            : "finished__outcome"
+                    }
+                >
+                    {view.outcomeLabel}
+                </p>
+                <p className="finished__reason">{view.reasonLabel}</p>
+                <p className="finished__moveCount">手数 {view.moveCount}</p>
+            </div>
 
             <ul className="finished__players">
                 {view.players.map((player) => (
@@ -61,8 +65,6 @@ export function Finished(props: FinishedProps): React.JSX.Element {
 
             {/* 最終盤面。印も操作も出さず、決着した局面をそのまま見せる（要件定義 §7.4） */}
             <Board cells={view.cells} />
-
-            <p className="finished__moveCount">手数 {view.moveCount}</p>
 
             <div className="app__actions">
                 {/* 再戦を始められるのは座席に着いている側だけ。観戦者には出さない */}

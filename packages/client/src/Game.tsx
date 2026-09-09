@@ -47,7 +47,8 @@ export function Game(props: GameProps): React.JSX.Element {
 
     return (
         <section className="app__screen">
-            <h2 className="app__heading">対局中</h2>
+            {/* 対局中であることは手番の行から読み取れるため、見出しは読み上げ用に留める */}
+            <h2 className="app__heading app__heading--offscreen">対局中</h2>
 
             <ul className="game__players">
                 {view.players.map((player) => (
@@ -62,25 +63,15 @@ export function Game(props: GameProps): React.JSX.Element {
                 <span className="game__moveCount">手数 {view.moveCount}</span>
             </p>
 
-            <Board cells={view.cells} onPlay={actions.play} />
+            {/* パス通知と確認は盤に重ね、出入りで盤の大きさを変えない（要件定義 F-09） */}
+            <div className="game__boardWrap">
+                <Board cells={view.cells} onPlay={actions.play} />
 
-            {view.passNotice !== null && <p className="app__notice">{view.passNotice}</p>}
+                {view.passNotice !== null && (
+                    <p className="app__notice game__pass">{view.passNotice}</p>
+                )}
 
-            {view.isPlayer &&
-                (confirming === null ? (
-                    <div className="app__actions">
-                        {(["resign", "abort"] as const).map((kind) => (
-                            <button
-                                key={kind}
-                                type="button"
-                                disabled={!view.canControl}
-                                onClick={() => setConfirming(kind)}
-                            >
-                                {CONTROL_LABELS[kind]}
-                            </button>
-                        ))}
-                    </div>
-                ) : (
+                {confirming !== null && (
                     <div className="game__confirm">
                         <p className="game__confirmText">{CONFIRM_MESSAGES[confirming]}</p>
                         <div className="app__actions">
@@ -100,7 +91,23 @@ export function Game(props: GameProps): React.JSX.Element {
                             </button>
                         </div>
                     </div>
-                ))}
+                )}
+            </div>
+
+            {view.isPlayer && (
+                <div className="app__actions">
+                    {(["resign", "abort"] as const).map((kind) => (
+                        <button
+                            key={kind}
+                            type="button"
+                            disabled={!view.canControl || confirming !== null}
+                            onClick={() => setConfirming(kind)}
+                        >
+                            {CONTROL_LABELS[kind]}
+                        </button>
+                    ))}
+                </div>
+            )}
         </section>
     );
 }

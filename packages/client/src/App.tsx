@@ -109,8 +109,11 @@ function Room({
 
     return (
         <>
-            <ConnectionNotice state={state} />
-            <ErrorNotice state={state} actions={actions} />
+            {/* 通知は画面に重ねる。出入りしても盤面の大きさが変わらない（要件定義 §7.3） */}
+            <div className="app__notices">
+                <ConnectionNotice state={state} />
+                <ErrorNotice state={state} actions={actions} />
+            </div>
             <Screen state={state} actions={actions} avatars={avatars} />
         </>
     );

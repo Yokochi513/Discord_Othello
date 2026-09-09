@@ -10,9 +10,18 @@
     box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+    height: 100%;
+}
+
 body {
     margin: 0;
-    min-height: 100vh;
+    /* Activity の表示領域に収め、スクロールを起こさせない（要件定義 §7.3） */
+    height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
     background-color: #1e1f22;
     color: #dbdee1;
     font-family:
@@ -26,17 +35,25 @@ body {
     line-height: 1.6;
 }
 
+/*
+ * 画面全体の骨組み。高さをビューポートに固定し、
+ * 余った高さは盤面（.board__area）が受け取る。
+ * position: relative は通知と確認を重ねる基準を兼ねる。
+ */
 .app {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
-    padding: 2rem 1rem;
+    gap: 0.5rem;
+    height: 100%;
+    min-height: 0;
+    padding: 0.5rem 0.75rem;
 }
 
 .app__title {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1rem;
     letter-spacing: 0.2em;
 }
 
@@ -53,7 +70,10 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    /* 盤面が残りの高さを取れるよう、画面自身も伸縮する側に回る */
+    flex: 1;
+    min-height: 0;
     width: 100%;
     max-width: 30rem;
 }
@@ -61,6 +81,41 @@ body {
 .app__heading {
     margin: 0;
     font-size: 1.125rem;
+}
+
+/*
+ * 見出しの内容を別の行から読み取れる画面では、読み上げのためだけに残す。
+ * 対局画面は手番の行が、終局画面は勝敗の行が同じ役目を果たす。
+ */
+.app__heading--offscreen {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* 接続断とエラーの通知は上端に重ね、盤の大きさに影響させない（要件定義 §14） */
+.app__notices {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    left: 0.75rem;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    /* 通知が無いときに下の操作を遮らないようにする */
+    pointer-events: none;
+}
+
+.app__notices .app__notice {
+    pointer-events: auto;
+    border: 1px solid #3f4147;
 }
 
 .app__notice {
@@ -208,7 +263,11 @@ body {
     font-size: 0.875rem;
 }
 
+/* 観戦者に上限は無いため（§20 O-09）、溢れる分はこの一覧の中だけで送る */
 .lobby__spectators {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     width: 100%;
 }
 
@@ -253,21 +312,23 @@ body {
 .game__players {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.25rem;
     width: 100%;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
+/* 盤面に高さを譲るため、行の余白は最小限にする */
 .game__player {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
     border: 1px solid #3f4147;
     border-radius: 0.5rem;
     background-color: #2b2d31;
+    font-size: 0.875rem;
 }
 
 .game__mark {
@@ -322,7 +383,7 @@ body {
     align-items: baseline;
     gap: 0.75rem;
     margin: 0;
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
 }
 
 .game__moveCount {
@@ -333,19 +394,44 @@ body {
 
 /* 盤面（要件定義 §7.3 / §7.4）。対局画面と終局画面で共有する */
 
+/*
+ * 盤の置き場所。画面に残った高さをすべて受け取る。
+ * 盤はこの領域の幅と高さの小さい方に合わせるので、縦にも横にも溢れない。
+ */
+.board__area {
+    display: grid;
+    place-items: center;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
 .board {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(8, 1fr);
     gap: 1px;
-    width: 100%;
-    max-width: 24rem;
+    /* コンテナクエリを持たない環境向けの基本形（幅を基準にした正方形） */
+    width: min(24rem, 100%);
     aspect-ratio: 1 / 1;
     padding: 1px;
     border-radius: 0.375rem;
     background-color: #1b4a37;
     /* 盤の線が背景色として見えるよう、マス同士の隙間だけを残す */
     overflow: hidden;
+}
+
+@supports (container-type: size) {
+    .board__area {
+        container-type: size;
+    }
+
+    .board {
+        /* 高さに余裕があるかぎり 24rem を保ち、足りないときだけ縮む */
+        width: min(24rem, 100cqmin);
+        height: min(24rem, 100cqmin);
+        aspect-ratio: auto;
+    }
 }
 
 .board__cell {
@@ -435,13 +521,46 @@ body {
     }
 }
 
+/*
+ * 盤とその上に重ねる通知・確認（要件定義 §7.3 / F-09）。
+ * 重ねることで、通知の出入りで盤の大きさが変わらない。
+ */
+.game__boardWrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+}
+
+/* パス通知は盤の下端に重ねる */
+.game__pass {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    border: 1px solid #3f4147;
+}
+
 /* 対局画面の確認操作（要件定義 §7.3） */
 
 .game__confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    background-color: rgb(30 31 34 / 0.88);
 }
 
 .game__confirmText {
@@ -452,9 +571,18 @@ body {
 
 /* 終局画面（要件定義 §7.4） */
 
+/* 勝敗・理由・手数は横に並べ、幅が足りないときだけ折り返す */
+.finished__result {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.25rem 0.75rem;
+}
+
 .finished__outcome {
     margin: 0;
-    font-size: 1.375rem;
+    font-size: 1.25rem;
     font-weight: bold;
     letter-spacing: 0.05em;
 }
@@ -476,21 +604,23 @@ body {
 .finished__players {
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: 0.25rem;
     width: 100%;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
+/* 最終盤面に高さを譲るため、行の余白は最小限にする */
 .finished__player {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.75rem;
+    gap: 0.375rem;
+    padding: 0.1875rem 0.5rem;
     border: 1px solid #3f4147;
     border-radius: 0.5rem;
     background-color: #2b2d31;
+    font-size: 0.875rem;
 }
 
 /* 勝った側の枠を目立たせる */

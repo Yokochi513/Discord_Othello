@@ -20,6 +20,7 @@ export type BoardProps = {
 
 /**
  * CSS Grid の 8×8 で盤面を描く。
+ * 外側の board__area が画面に残った高さを受け取り、盤はその中に収まる大きさになる。
  * @param props 盤面に渡す値
  * @returns 盤面の要素
  */
@@ -27,10 +28,12 @@ export function Board(props: BoardProps): React.JSX.Element {
     const { cells, onPlay } = props;
 
     return (
-        <div className="board">
-            {cells.map((cell) => (
-                <Cell key={cell.square} cell={cell} onPlay={onPlay} />
-            ))}
+        <div className="board__area">
+            <div className="board">
+                {cells.map((cell) => (
+                    <Cell key={cell.square} cell={cell} onPlay={onPlay} />
+                ))}
+            </div>
         </div>
     );
 }
