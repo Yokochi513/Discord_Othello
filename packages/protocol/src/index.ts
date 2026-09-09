@@ -1,0 +1,139 @@
+/** クライアントからサーバーへ送る対局操作。ユーザーとインスタンスは接続情報から確定する。 */
+export type ClientMessage =
+    | { readonly type: "seat"; readonly seat: "black" | "white" }
+    | { readonly type: "leave" }
+    | { readonly type: "start_game" }
+    /** 終局後、黒白を入れ替えて同じ 2 人で次の対局を始める（要件定義 F-19 / §20 O-10） */
+    | { readonly type: "rematch" }
+    | { readonly type: "move"; readonly gameId: string; readonly square: Square }
+    | { readonly type: "resign"; readonly gameId: string }
+    | { readonly type: "abort"; readonly gameId: string };
+
+/** サーバーからクライアントへ送る通知。 */
+export type ServerMessage =
+    | { readonly type: "connected"; readonly userId: string; readonly instanceId: string }
+    | { readonly type: "state"; readonly state: RoomState }
+    | { readonly type: "game_started"; readonly game: GameState }
+    | {
+          readonly type: "passed";
+          readonly gameId: string;
+          /** 自動パスした側。両者が続けてパスした場合は起きた順に 2 つ並ぶ */
+          readonly passedBy: readonly ("black" | "white")[];
+      }
+    | { readonly type: "game_ended"; readonly game: GameState; readonly result: GameResult }
+    | { readonly type: "error"; readonly code: ErrorCode; readonly message: string };
+
+/** 盤上の座標。 */
+export type Square = `${"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"}${
+    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"}`;
+
+/**
+ * ロビーに参加している人物の公開情報。
+ * サーバーが保持するのは User ID と表示名のみで、アバターはクライアントが
+ * Discord SDK から解決する（要件定義 §11.5）。
+ */
+export type Participant = { readonly userId: string; readonly displayName: string };
+
+/** プレイヤーが着席している場合の公開情報。空席は null。 */
+export type Seat = Participant | null;
+
+/** Activity インスタンスに属するロビーと対局のスナップショット。 */
+export type RoomState = {
+    readonly instanceId: string;
+    readonly seats: { readonly black: Seat; readonly white: Seat };
+    /** 座席に着いていない参加者（要件定義 §7.2 / F-13）。 */
+    readonly spectators: readonly Participant[];
+    readonly game: GameState | null;
+};
+
+/** クライアント表示に必要な対局状態（要件定義 §7.3）。 */
+export type GameState = {
+    readonly id: string;
+    readonly board: readonly (readonly ("black" | "white" | "empty")[])[];
+    /** 現在の手番。終局している場合は null */
+    readonly turn: "black" | "white" | null;
+    /** 黒白それぞれの石数 */
+    readonly scores: { readonly black: number; readonly white: number };
+    /** 経過手数。自動パスも 1 手として数える */
+    readonly moveCount: number;
+    /** 直前に打たれた手。まだ着手がなければ null */
+    readonly lastMove: Square | null;
+    /** 対局している 2 人。対局開始時の座席で確定する */
+    readonly players: { readonly black: Participant; readonly white: Participant };
+    /** 確定した対局結果。対局中は null */
+    readonly result: GameResult | null;
+};
+
+/**
+ * 確定した対局の決着（要件定義 §6 / §7.4）。
+ * 無効試合（中断・離脱）は勝敗を付けないため outcome は null になる。
+ */
+export type GameResult = {
+    readonly reason: GameEndReason;
+    readonly outcome: Outcome | null;
+};
+
+/** 対局の終了理由。 */
+export type GameEndReason =
+    /** 両者が続けてパスした */
+    | "both_passed"
+    /** 盤面が石で埋まった */
+    | "board_full"
+    /** 一方の石が 0 枚になった */
+    | "shutout"
+    /** 一方が投了した */
+    | "resign"
+    /** 一方が中断した（無効試合） */
+    | "abort"
+    /** 対局中に一方がサーバーを離脱した（無効試合。要件定義 §14 E-09） */
+    | "disconnect";
+
+/** 対局の勝敗。 */
+export type Outcome = "black_win" | "white_win" | "draw";
+
+/** サーバーがクライアントへ通知するエラー種別。 */
+export type ErrorCode =
+    | "invalid_message"
+    | "unauthorized"
+    | "seat_unavailable"
+    | "game_not_found"
+    | "illegal_move"
+    | "invalid_state";
+
+/**
+ * JSON 値が、現在サポートするクライアントメッセージかを検査する。
+ * @param value 検査する値
+ * @returns クライアントメッセージなら true
+ */
+export function isClientMessage(value: unknown): value is ClientMessage {
+    if (!isRecord(value) || typeof value.type !== "string") return false;
+    if ("userId" in value || "instanceId" in value) return false;
+
+    switch (value.type) {
+        case "seat":
+            return value.seat === "black" || value.seat === "white";
+        case "leave":
+        case "start_game":
+        case "rematch":
+            return true;
+        case "move":
+            return isNonEmptyString(value.gameId) && isSquare(value.square);
+        case "resign":
+        case "abort":
+            return isNonEmptyString(value.gameId);
+        default:
+            return false;
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === "string" && value.length > 0;
+}
+
+function isSquare(value: unknown): value is Square {
+    return typeof value === "string" && /^[a-h][1-8]$/.test(value);
+}

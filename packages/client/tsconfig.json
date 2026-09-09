@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    // バンドルは Vite が行うため tsc は型検査のみに使う。
+    // allowImportingTsExtensions（相対 import に .ts / .tsx を明示するため）は
+    // noEmit とセットでのみ有効になる
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src"]
+}

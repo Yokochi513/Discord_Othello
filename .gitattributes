@@ -1,0 +1,14 @@
+# 改行コードの扱いを OS 差によらず固定する。
+# テキストと判定したファイルはリポジトリにも作業ツリーにも LF で置き、
+# Windows の core.autocrlf=true による CRLF 変換より優先させる。
+* text=auto eol=lf
+
+# バイナリは変換対象から外す
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary

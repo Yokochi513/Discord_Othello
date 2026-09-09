@@ -1,0 +1,10 @@
+# git blame から除外するコミット。
+# 整形やリネームなど、動作を変えない機械的な一括変更のみを登録する。
+#
+# 有効化するには各自の作業環境で一度だけ以下を実行する:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# コミットは短縮形ではなく完全な SHA-1 で書くこと（git が短縮形を受け付けないため）。
+
+# style: Prettier で全ファイルを整形
+08e52ee1062612ec69138006000661c1d403e5be
