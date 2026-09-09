@@ -3,6 +3,8 @@ export type ClientMessage =
     | { readonly type: "seat"; readonly seat: "black" | "white" }
     | { readonly type: "leave" }
     | { readonly type: "start_game" }
+    /** 終局後、黒白を入れ替えて同じ 2 人で次の対局を始める（要件定義 F-19 / §20 O-10） */
+    | { readonly type: "rematch" }
     | { readonly type: "move"; readonly gameId: string; readonly square: Square }
     | { readonly type: "resign"; readonly gameId: string }
     | { readonly type: "abort"; readonly gameId: string };
@@ -112,6 +114,7 @@ export function isClientMessage(value: unknown): value is ClientMessage {
             return value.seat === "black" || value.seat === "white";
         case "leave":
         case "start_game":
+        case "rematch":
             return true;
         case "move":
             return isNonEmptyString(value.gameId) && isSquare(value.square);

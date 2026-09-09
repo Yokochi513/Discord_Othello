@@ -8,6 +8,7 @@ import {
     leaveLobby,
     leaveSeat,
     LobbyStore,
+    swapSeats,
     takeSeat,
     toRoomState,
     type LobbyState,
@@ -116,6 +117,28 @@ describe("leaveSeat", () => {
 
         expect(leaveSeat(state, ojosama.userId)).toBe(state);
         expect(leaveSeat(state, "unknown-user")).toBe(state);
+    });
+});
+
+describe("swapSeats", () => {
+    it("黒席と白席の着席者を入れ替える（O-10）", () => {
+        const state = swapSeats(seatedLobby());
+
+        expect(state.seats).toEqual({ black: harima, white: yokochi });
+        // 観戦者は再戦の座席入れ替えに巻き込まない
+        expect(state.spectators).toEqual([ojosama]);
+    });
+
+    it("片側だけ埋まっていても入れ替える", () => {
+        const state = swapSeats(leaveSeat(seatedLobby(), harima.userId));
+
+        expect(state.seats).toEqual({ black: null, white: yokochi });
+    });
+
+    it("両席が空なら状態を変えない", () => {
+        const state = joinLobby(createLobby("room-a"), yokochi);
+
+        expect(swapSeats(state)).toBe(state);
     });
 });
 

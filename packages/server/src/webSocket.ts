@@ -5,6 +5,7 @@ import type { ClientMessage, Participant, ServerMessage, Square } from "@othello
 import { WebSocket, WebSocketServer } from "ws";
 
 import {
+    checkStartable,
     GameStore,
     toGameView,
     type GameSession,
@@ -134,6 +135,21 @@ export class WebSocketHub {
             this.lobby(connection.instanceId),
             connection.userId,
         );
+    }
+
+    /** 終局後、黒白を入れ替えて同じ座席の 2 人で次の対局を始める（要件定義 F-19 / §20 O-10）。
+     * 開始できないと判断した場合は座席を入れ替えず、ロビーを元のまま残す。
+     * @param connection 認証済みコンテキスト
+     * @returns 生成した対局セッション、または拒否理由
+     */
+    rematch(connection: WebSocketConnection): SessionResult {
+        const { instanceId, userId } = connection;
+        const check = checkStartable(this.game(instanceId), this.lobby(instanceId), userId);
+        if (!check.ok) return check;
+
+        // O-10: 再戦のたびに先手を交代させる。入れ替えた座席のまま次の対局を組む
+        const swapped = this.#lobbies.swapSeats(instanceId);
+        return this.#games.start(instanceId, swapped.state, userId);
     }
 
     /** 着手を検証して盤面へ適用する（要件定義 F-07）。
@@ -310,8 +326,9 @@ export function attachWebSocketServer(
                     handleLobbyMessage(hub, socket, connection, message, log);
                     return;
                 }
-                if (message.type === "start_game") {
-                    handleStartGame(hub, socket, connection, log);
+                if (message.type === "start_game" || message.type === "rematch") {
+                    const isRematch = message.type === "rematch";
+                    handleStartGame(hub, socket, connection, isRematch, log);
                     return;
                 }
                 if (message.type === "move") {
@@ -371,27 +388,30 @@ function handleLobbyMessage(
     hub.broadcastState(connection.instanceId);
 }
 
-// 対局を開始し、全員を対局画面へ遷移させる（要件定義 F-05）
+// 対局を開始し、全員を対局画面へ遷移させる（要件定義 F-05・F-19）
 function handleStartGame(
     hub: WebSocketHub,
     socket: WebSocket,
     connection: WebSocketConnection,
+    isRematch: boolean,
     log: Pick<Console, "log" | "error">,
 ): void {
-    const result = hub.startGame(connection);
+    const result = isRematch ? hub.rematch(connection) : hub.startGame(connection);
     if (!result.ok) {
         sendError(socket, result.code, result.message);
         return;
     }
     const { id, players } = result.session;
     log.log(
-        `対局開始: gameId=${id} instanceId=${connection.instanceId} ` +
+        `${isRematch ? "再戦" : "対局開始"}: gameId=${id} instanceId=${connection.instanceId} ` +
             `black=${players.black.userId} white=${players.white.userId}`,
     );
     hub.broadcast(connection.instanceId, {
         type: "game_started",
         game: toGameView(result.session),
     });
+    // 再戦では黒白が入れ替わるため、更新後のロビーも配り直す（要件定義 §20 O-10）
+    if (isRematch) hub.broadcastState(connection.instanceId);
 }
 
 // 着手を受理し、更新後の盤面をルーム全員（観戦者含む）へ配信する（要件定義 F-06・F-07）
@@ -520,6 +540,7 @@ function parseClientMessage(text: string): ClientMessage | null {
                 : null;
         case "leave":
         case "start_game":
+        case "rematch":
             return message as ClientMessage;
         case "move":
             return isId(message.gameId) && isSquare(message.square)

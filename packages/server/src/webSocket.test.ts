@@ -574,6 +574,93 @@ describe("WebSocket server", () => {
         expect(server.webSocketHub.game("room-a")).toBeNull();
     });
 
+    it("F-19: 終局後の再戦で黒白を入れ替えて次の対局を始める", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+        players.white.send(JSON.stringify({ type: "resign", gameId: game.id }));
+        for (const client of everyone(players)) await receive(client);
+
+        players.black.send(JSON.stringify({ type: "rematch" }));
+
+        for (const client of everyone(players)) {
+            expect(await receive(client)).toMatchObject({
+                type: "game_started",
+                game: {
+                    id: "game-2",
+                    turn: "black",
+                    moveCount: 0,
+                    // O-10: 前局の白番が黒番になる
+                    players: { black: participant("user-2"), white: participant("user-1") },
+                },
+            });
+            // 入れ替えた座席はロビーにも反映され、観戦者にも届く
+            expect((await receiveState(client)).seats).toEqual({
+                black: participant("user-2"),
+                white: participant("user-1"),
+            });
+        }
+        expect(log.log).toHaveBeenCalledWith(
+            "再戦: gameId=game-2 instanceId=room-a black=user-2 white=user-1",
+        );
+    });
+
+    it("中断で終わった対局からも再戦できる", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+        players.black.send(JSON.stringify({ type: "abort", gameId: game.id }));
+        for (const client of everyone(players)) {
+            await receive(client);
+            await receiveState(client);
+        }
+
+        players.white.send(JSON.stringify({ type: "rematch" }));
+
+        expect(await receive(players.spectator)).toMatchObject({
+            type: "game_started",
+            game: {
+                id: "game-2",
+                players: { black: participant("user-2"), white: participant("user-1") },
+            },
+        });
+    });
+
+    it("観戦者からの再戦を拒否し、座席を入れ替えない", async () => {
+        const players = await seatBoth("room-a");
+        const game = await startGame(players);
+        players.black.send(JSON.stringify({ type: "resign", gameId: game.id }));
+        for (const client of everyone(players)) await receive(client);
+
+        players.spectator.send(JSON.stringify({ type: "rematch" }));
+
+        expect(await receive(players.spectator)).toEqual({
+            type: "error",
+            code: "unauthorized",
+            message: "対局者だけが開始できます",
+        });
+        expect(server.webSocketHub.lobby("room-a").seats).toEqual({
+            black: participant("user-1"),
+            white: participant("user-2"),
+        });
+        await expectNoBroadcast(players.black);
+    });
+
+    it("進行中の対局があるうちは再戦を受け付けない", async () => {
+        const players = await seatBoth("room-a");
+        await startGame(players);
+
+        players.black.send(JSON.stringify({ type: "rematch" }));
+
+        expect(await receive(players.black)).toEqual({
+            type: "error",
+            code: "invalid_state",
+            message: "対局が既に進行中です",
+        });
+        expect(server.webSocketHub.lobby("room-a").seats).toEqual({
+            black: participant("user-1"),
+            white: participant("user-2"),
+        });
+    });
+
     it("E-09: 対局中の離脱を無効試合として終え、残った全員へ配信する", async () => {
         const players = await seatBoth("room-a");
         await startGame(players);

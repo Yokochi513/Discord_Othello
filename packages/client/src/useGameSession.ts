@@ -37,6 +37,8 @@ export type GameActions = {
     leaveSeat(): void;
     /** 対局を開始する（要件定義 F-05） */
     startGame(): void;
+    /** 終局後、黒白を入れ替えて同じ座席で次の対局を始める（要件定義 F-19 / §20 O-10） */
+    rematch(): void;
     /** 着手する（要件定義 F-07）
      * @param square 着手する座標表記
      */
@@ -45,7 +47,7 @@ export type GameActions = {
     resign(): void;
     /** 対局を中断する（無効試合。要件定義 F-12） */
     abort(): void;
-    /** 終局画面を閉じてロビーへ戻る */
+    /** 終局画面を閉じてロビーへ戻る（要件定義 §7.4） */
     returnToLobby(): void;
     /** 表示中のエラーを閉じる */
     dismissError(): void;
@@ -119,6 +121,7 @@ export function useGameSession(
             takeSeat: (seat) => send({ type: "seat", seat }),
             leaveSeat: () => send({ type: "leave" }),
             startGame: () => send({ type: "start_game" }),
+            rematch: () => send({ type: "rematch" }),
             play: (square) => sendForGame((id) => ({ type: "move", gameId: id, square })),
             resign: () => sendForGame((id) => ({ type: "resign", gameId: id })),
             abort: () => sendForGame((id) => ({ type: "abort", gameId: id })),
